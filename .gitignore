@@ -1,0 +1,116 @@
+# ============================================
+# USM Autoimmune ML Platform - Git Ignore
+# ============================================
+
+# === CRITICAL: Never commit sensitive data ===
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+server.key
+server.crt
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# === Virtual Environments ===
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# === IDEs ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# === Jupyter Notebooks ===
+.ipynb_checkpoints
+*.ipynb
+
+# === Data Files - NEVER commit patient data ===
+/data/raw/**
+/data/uploads/**
+/data/processed/**
+*.csv
+*.xlsx
+*.xls
+*.json
+*.parquet
+*.pdf
+*.dcm
+*.png
+*.jpg
+*.jpeg
+*.tiff
+
+# === Models & Artifacts ===
+/models/**
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+
+# === Logs ===
+/logs/**
+*.log
+
+# === Database ===
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+
+# === Docker ===
+.dockerignore
+
+# === MLflow ===
+mlruns/
+mlartifacts/
+
+# === Testing ===
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# === Temporary Files ===
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# === OS ===
+Thumbs.db
+.DS_Store

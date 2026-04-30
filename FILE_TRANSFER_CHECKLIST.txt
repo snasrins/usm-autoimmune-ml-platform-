@@ -1,0 +1,345 @@
+"""
+=============================================================================
+FILE TRANSFER CHECKLIST
+Sprint 3 Complete Implementation - All 11 Models + Scorecard + Comparison
+=============================================================================
+
+Transfer Date: 2025-01-XX
+Target Server: 100.106.132.15
+Transfer Method: WinSCP
+Destination: /home/usm/usm-autoimmune-ml-platform/
+
+=============================================================================
+1. CORE ML TRAINING FILES (ALL 11 MODELS SUPPORT)
+=============================================================================
+
+app/ml/training/base_models.py
+    - MODIFIED: Added 3 new model training methods
+    - train_ridge_classifier() - Ridge with L2 regularization
+    - train_linear_discriminant() - LDA for linearly separable classes
+    - train_gradient_boosting() - Classical sklearn GradientBoosting
+    - Updated TREE_MODELS to include 'gradient_boosting'
+    - Updated LINEAR_MODELS to include 'ridge_classifier', 'linear_discriminant'
+    - All 11 models from research framework now supported
+
+app/schemas/training.py
+    - MODIFIED: Updated ModelName enum
+    - Added RIDGE_CLASSIFIER = "ridge_classifier"
+    - Added LINEAR_DISCRIMINANT = "linear_discriminant"
+    - Added GRADIENT_BOOSTING = "gradient_boosting"
+    - Training endpoints now accept all 11 model names
+
+=============================================================================
+2. SCORECARD SYSTEM FILES (USMA-47)
+=============================================================================
+
+app/services/scorecard_service.py
+    - NEW FILE: Clinical Scorecard Service
+    - Converts ML predictions → Clinical risk scores (0-100)
+    - Risk group classification (Low/Moderate/High/Very High)
+    - Feature-level scoring and contribution analysis
+    - Clinical recommendations per risk group
+    - Transparent bins with interpretable ranges
+    - Methods:
+        * generate_scorecard() - Main scorecard generation
+        * _probability_to_risk_score() - Convert probabilities to 0-100 scale
+        * _determine_risk_group() - Risk stratification
+        * _calculate_feature_scores() - Feature contribution analysis
+        * get_risk_group_statistics() - Population-level risk distribution
+
+=============================================================================
+3. MODEL COMPARISON & SCORECARD API (USMA-47 + USMA-43)
+=============================================================================
+
+app/api/endpoints/scorecard.py
+    - NEW FILE: Scorecard & Model Comparison endpoints
+    - 6 new API endpoints:
+    
+    POST /api/v1/ml/scorecard
+        - Generate clinical scorecard for single patient
+        - Returns risk score, risk group, clinical recommendations
+        
+    POST /api/v1/ml/scorecard/batch
+        - Batch scorecard generation for patient cohorts
+        - Risk stratification statistics
+        
+    POST /api/v1/ml/compare
+        - Compare multiple models side-by-side
+        - Rank by any metric (AUC, F1, Precision, etc.)
+        
+    GET /api/v1/ml/compare/detailed/{model_name}
+        - Detailed metrics for specific model
+        - Hyperparameters, configuration, calibration info
+        
+    GET /api/v1/ml/models/available
+        - List all trained models in MinIO
+        - Quick status check
+        
+    Schemas:
+        - ScorecardRequest
+        - ScorecardResponse
+        - ModelComparisonRequest
+        - ModelComparisonResponse
+
+app/main.py
+    - MODIFIED: Added scorecard router registration
+    - import app.api.endpoints.scorecard as scorecard
+    - app.include_router(scorecard.router, prefix=f"{settings.API_V1_STR}/ml", tags=["Clinical Scorecard & Model Comparison"])
+
+=============================================================================
+4. TEST SCRIPTS
+=============================================================================
+
+test_scorecard.py
+    - NEW FILE: Comprehensive test suite for USMA-47 + USMA-43
+    - test_scorecard() - Test scorecard generation with sample patient
+    - test_model_comparison() - Test model comparison dashboard
+    - Beautiful formatted output with risk assessment details
+    
+    Usage:
+        # Test scorecard only
+        python3 test_scorecard.py --test scorecard --model xgboost
+        
+        # Test model comparison only
+        python3 test_scorecard.py --test compare
+        
+        # Test all features
+        python3 test_scorecard.py --test all
+
+complete_training_pipeline.py
+    - EXISTING FILE: May need to update if you want to train new models
+    - Can now train all 11 models: xgboost, lightgbm, random_forest, 
+      svm, mlp, knn, decision_tree, adaboost, logistic_regression,
+      ridge_classifier, linear_discriminant, gradient_boosting
+
+=============================================================================
+5. TRANSFER INSTRUCTIONS
+=============================================================================
+
+Step 1: Open WinSCP
+    - Host: 100.106.132.15
+    - Username: usm
+    - Password: [your server password]
+    - Port: 22
+
+Step 2: Navigate to Project Directory
+    Remote path: /home/usm/usm-autoimmune-ml-platform/
+
+Step 3: Transfer Files (Drag & Drop or Upload)
+    
+    Transfer these files:
+    ✓ app/ml/training/base_models.py (OVERWRITE)
+    ✓ app/schemas/training.py (OVERWRITE)
+    ✓ app/services/scorecard_service.py (NEW)
+    ✓ app/api/endpoints/scorecard.py (NEW)
+    ✓ app/main.py (OVERWRITE)
+    ✓ test_scorecard.py (NEW)
+    
+Step 4: Restart Docker Containers
+    SSH into server:
+        ssh usm@100.106.132.15
+    
+    Navigate to project:
+        cd /home/usm/usm-autoimmune-ml-platform
+    
+    Restart services:
+        docker-compose down
+        docker-compose up -d --build
+    
+    Verify services are running:
+        docker-compose ps
+        
+    Check logs for errors:
+        docker-compose logs fastapi -f
+
+Step 5: Verify API Endpoints
+    Open Swagger UI:
+        http://100.106.132.15:8001/docs
+    
+    Check new endpoints are visible:
+        - POST /api/v1/ml/scorecard
+        - POST /api/v1/ml/scorecard/batch
+        - POST /api/v1/ml/compare
+        - GET /api/v1/ml/compare/detailed/{model_name}
+        - GET /api/v1/ml/models/available
+
+Step 6: Train New Models (Optional)
+    If you want to train the 3 new models:
+    
+    SSH into container:
+        docker exec -it usm-autoimmune-ml-platform-fastapi-1 bash
+    
+    Train individual models:
+        python3 complete_training_pipeline.py --model ridge_classifier
+        python3 complete_training_pipeline.py --model linear_discriminant
+        python3 complete_training_pipeline.py --model gradient_boosting
+    
+    Or train all models:
+        for model in ridge_classifier linear_discriminant gradient_boosting; do
+            python3 complete_training_pipeline.py --model $model
+        done
+
+Step 7: Test New Features
+    From your local machine:
+        
+    Test scorecard:
+        python3 test_scorecard.py --test scorecard --model xgboost
+    
+    Test model comparison:
+        python3 test_scorecard.py --test compare
+    
+    Test everything:
+        python3 test_scorecard.py --test all
+
+=============================================================================
+6. WHAT'S NEW - FEATURE SUMMARY
+=============================================================================
+
+✅ ALL 11 ML MODELS FROM RESEARCH FRAMEWORK
+    - XGBoost, LightGBM, Random Forest (already had)
+    - SVM, MLP, KNN, Decision Tree, AdaBoost, Logistic Regression (already had)
+    - Ridge Classifier (NEW)
+    - Linear Discriminant Analysis (NEW)
+    - Gradient Boosting (NEW)
+
+✅ CLINICAL SCORECARD SYSTEM (USMA-47)
+    - Risk Score: 0-100 transparent scale
+    - Risk Groups: Low/Moderate/High/Very High
+    - Clinical Recommendations: Evidence-based action plans
+    - Feature Contributions: Which features drive the score
+    - Batch Processing: Risk stratification for patient cohorts
+
+✅ MODEL COMPARISON DASHBOARD (USMA-43)
+    - Side-by-side model comparison
+    - Rank by any metric (AUC, F1, Precision, Recall, Brier)
+    - Detailed model information
+    - Best model recommendation
+    - Available models listing
+
+✅ INTEGRATION
+    - All endpoints follow existing authentication pattern
+    - Uses MinIO for model persistence
+    - Integrated with existing feature engineering pipeline
+    - Compatible with SHAP explainability (USMA-50)
+
+=============================================================================
+7. API USAGE EXAMPLES
+=============================================================================
+
+Example 1: Generate Clinical Scorecard
+--------------------------------------
+POST http://100.106.132.15:8001/api/v1/ml/scorecard
+
+Request:
+{
+    "model_name": "xgboost",
+    "version": "v1",
+    "patient_data": {
+        "demographics_age": 35,
+        "lab_results_ESR": 45,
+        "disease_activity_SLEDAI_score": 8
+    },
+    "include_feature_scores": true
+}
+
+Response:
+{
+    "model_name": "xgboost",
+    "predicted_class": "Moderate",
+    "risk_score": 52.3,
+    "risk_group": "Moderate Risk",
+    "risk_level": 2,
+    "clinical_recommendation": "Consider therapy adjustment, monitor SLEDAI score",
+    "top_contributing_features": [
+        {"feature": "SLEDAI_score", "score": 45.2},
+        {"feature": "ESR", "score": 32.1}
+    ]
+}
+
+Example 2: Compare All Models
+-------------------------------
+POST http://100.106.132.15:8001/api/v1/ml/compare
+
+Request:
+{
+    "model_names": ["xgboost", "lightgbm", "random_forest", "svm", "mlp"],
+    "version": "v1",
+    "metric": "test_auc"
+}
+
+Response:
+{
+    "best_model": "xgboost",
+    "comparison_metric": "test_auc",
+    "ranking": ["xgboost", "lightgbm", "random_forest", "svm", "mlp"],
+    "models": [
+        {
+            "model_name": "xgboost",
+            "test_auc": 0.8234,
+            "test_f1": 0.7512,
+            "cv_auc": 0.7891
+        },
+        ...
+    ]
+}
+
+=============================================================================
+8. VALIDATION CHECKLIST
+=============================================================================
+
+After transfer, verify:
+
+□ Docker containers are running (docker-compose ps)
+□ FastAPI logs show no errors (docker-compose logs fastapi)
+□ Swagger UI shows 6 new endpoints under "Clinical Scorecard & Model Comparison"
+□ Can authenticate with existing credentials
+□ test_scorecard.py runs successfully
+□ Can generate scorecard for sample patient
+□ Can compare existing models (xgboost, lightgbm, random_forest)
+□ (Optional) New models train successfully
+
+=============================================================================
+9. ROLLBACK PROCEDURE (if needed)
+=============================================================================
+
+If something goes wrong:
+
+1. Stop containers:
+   docker-compose down
+
+2. Restore previous files from git:
+   git checkout app/ml/training/base_models.py
+   git checkout app/schemas/training.py
+   git checkout app/main.py
+   
+3. Remove new files:
+   rm app/services/scorecard_service.py
+   rm app/api/endpoints/scorecard.py
+   rm test_scorecard.py
+
+4. Restart:
+   docker-compose up -d
+
+=============================================================================
+10. NEXT STEPS (OPTIONAL ENHANCEMENTS)
+=============================================================================
+
+Future enhancements you could consider:
+
+□ Train all 11 models and compare performance
+□ Add scorecard visualization (charts/graphs)
+□ Build web UI for scorecard display
+□ Export scorecard to PDF report
+□ Add longitudinal tracking (score changes over time)
+□ Integrate with clinical decision support system
+□ Add population-level risk analytics
+
+=============================================================================
+END OF CHECKLIST
+=============================================================================
+
+Questions? Issues?
+1. Check docker logs: docker-compose logs fastapi -f
+2. Verify API health: curl http://100.106.132.15:8001/health
+3. Test authentication: python3 test_scorecard.py --test scorecard
+"""

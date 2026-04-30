@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-bg font-sans text-black-cta antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-syne font-bold;
+  }
+}
+
+@layer components {
+  /* Primary CTA Button - Black with purple shimmer on hover */
+  .btn-primary {
+    @apply bg-black-cta text-white font-syne font-semibold px-xl py-md rounded-md;
+    @apply transition-all duration-150 ease-out;
+    @apply hover:-translate-y-[1px] hover:shadow-btn;
+    @apply flex items-center justify-center gap-2;
+  }
+  
+  .btn-primary:hover .arrow-icon {
+    @apply translate-x-[3px];
+  }
+  
+  /* Ghost / Social Button */
+  .btn-ghost {
+    @apply bg-white border border-gray-300 text-black-cta font-medium px-lg py-md rounded-md;
+    @apply transition-all duration-150;
+    @apply hover:-translate-y-[1px] hover:border-purple-primary/30 hover:shadow-md;
+  }
+  
+  /* Input field with focus state */
+  .input-field {
+    @apply bg-gray-input border border-transparent text-black-cta px-lg py-md rounded-md;
+    @apply font-sans text-[15px] placeholder:text-gray-placeholder;
+    @apply transition-all duration-[180ms];
+    @apply focus:bg-white focus:border-purple-primary focus:shadow-focus-ring focus:outline-none;
+  }
+  
+  .input-field:focus + .input-icon {
+    @apply text-purple-primary;
+  }
+  
+  /* Purple pill/badge */
+  .badge-purple {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full;
+    @apply bg-purple-dim text-purple-primary font-medium text-sm;
+  }
+  
+  /* Card surfaces */
+  .card-surface {
+    @apply bg-gray-card rounded-card shadow-card p-2xl;
+  }
+  
+  /* DNA blob background */
+  .dna-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    opacity: 0.15;
+    pointer-events: none;
+  }
+  
+  .dna-blob-1 {
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, #7B5CF0 0%, transparent 70%);
+    top: -100px;
+    left: -100px;
+  }
+  
+  .dna-blob-2 {
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, #A78BFA 0%, transparent 70%);
+    bottom: -80px;
+    right: -80px;
+  }
+}
+
+@layer utilities {
+  .text-caption {
+    @apply text-xs text-gray-muted;
+  }
+  
+  .animate-feature-1 {
+    animation: fadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+  }
+  
+  .animate-feature-2 {
+    animation: fadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both;
+  }
+  
+  .animate-feature-3 {
+    animation: fadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+  }
+  
+  /* Radix UI subtle animations */
+  .radix-tooltip-content {
+    animation: tooltipFadeIn 0.15s ease-out;
+  }
+  
+  @keyframes tooltipFadeIn {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+}
+
+/* Radix Dialog subtle animations */
+@keyframes overlayShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes contentShow {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Apply animations to Radix components */
+[data-radix-popper-content-wrapper] {
+  animation: tooltipFadeIn 0.12s ease-out !important;
+}
+
+div[data-state="open"][role="dialog"] {
+  animation: contentShow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+div[data-state="open"].fixed.inset-0 {
+  animation: overlayShow 0.15s ease-out;
+}

@@ -1,0 +1,115 @@
+version: '3.8'
+
+# ============================================
+# SHAGGY SERVER CONFIGURATION (NEW - PRIMARY)
+# Uses alternate ports to avoid conflicts: 5433, 8001
+# To use: cp docker-compose.shaggy.yml docker-compose.yml
+# ============================================
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: usm-autoimmune-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${ZEROTIER_IP}:5433:5432"  # Port 5433 to avoid conflict with postgres-db-1
+    networks:
+      - usm-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: usm-autoimmune-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
+      ZEROTIER_IP: ${ZEROTIER_IP}
+      CUDA_VISIBLE_DEVICES: 0
+    volumes:
+      - ./app:/app
+      - ./scripts:/scripts
+      - ./data:/data
+      - ./models:/models
+      - ./logs:/logs
+    ports:
+      - "${ZEROTIER_IP}:8001:8000"  # Port 8001 to avoid conflict with existing uvicorn
+    networks:
+      - usm-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    working_dir: /
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: usm-autoimmune-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "${ZEROTIER_IP}:5050:80"
+    networks:
+      - usm-network
+    depends_on:
+      - postgres
+
+  minio:
+    image: minio/minio:latest
+    container_name: usm-autoimmune-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${ZEROTIER_IP}:9000:9000"
+      - "${ZEROTIER_IP}:9001:9001"
+    networks:
+      - usm-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+networks:
+  usm-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  minio_data:
+    driver: local

@@ -1,0 +1,29 @@
+# ============================================
+# Qwen3-VL-4B-Thinking Dependencies
+# Standalone Unstructured Pipeline (No Docker)
+# GPU: NVIDIA RTX 3090 24GB
+# Date: March 24, 2026
+# ============================================
+
+# Core ML Framework
+torch>=2.1.0  # PyTorch with CUDA support
+transformers>=4.38.0  # HuggingFace transformers (for Qwen3-VL)
+accelerate>=0.25.0  # For device_map="auto"
+sentencepiece>=0.1.99  # Tokenization
+
+# Vision Processing
+Pillow>=10.0.0  # Image handling
+torchvision>=0.16.0  # Vision utilities
+einops>=0.7.0  # Tensor operations for vision models
+
+# PDF Processing
+pdfplumber>=0.10.3  # Native PDF text extraction
+PyMuPDF>=1.23.0  # Alternative PDF library (fitz)
+pdf2image>=1.16.3  # Convert PDF to images for OCR
+
+# System Monitoring
+psutil>=5.9.0  # CPU, RAM, disk monitoring
+GPUtil>=1.4.0  # GPU monitoring (optional, nvidia-smi alternative)
+
+# Data Handling
+python-dotenv>=1.0.0  # Environment variables

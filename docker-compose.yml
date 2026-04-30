@@ -1,0 +1,131 @@
+services:
+  # PostgreSQL Database - Bind to Tailscale VPN only
+  postgres:
+    image: postgres:15-alpine
+    container_name: usm-autoimmune-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # init-db scripts disabled - SQLAlchemy manages schema
+      # - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      # Bind to Tailscale IP only - using 5435 to avoid conflicts (5432: postgres-db-1, 5433: system postgres, 5434: tanyadiet-db)
+      - "${TAILSCALE_IP}:5435:5432"
+    networks:
+      - usm-network
+    # SSL disabled for Sprint 1 development - enable in production after generating certificates
+    # command: >
+    #   postgres
+    #   -c ssl=on
+    #   -c ssl_cert_file=/var/lib/postgresql/server.crt
+    #   -c ssl_key_file=/var/lib/postgresql/server.key
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Application Server
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: usm-autoimmune-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
+      TAILSCALE_IP: ${TAILSCALE_IP}
+      CUDA_VISIBLE_DEVICES: 0
+      # MinIO Configuration
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_SECURE: ${MINIO_SECURE}
+    volumes:
+      - ./app:/app
+      - ./scripts:/scripts
+      - ./data:/data
+      - ./models:/models
+      - ./logs:/logs
+    ports:
+      # Bind to Tailscale IP only - using 8001 to avoid conflict with existing uvicorn
+      - "${TAILSCALE_IP}:8001:8000"
+    networks:
+      - usm-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    working_dir: /
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # PgAdmin - Database Management UI (Optional - Remove in production)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: usm-autoimmune-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      # Bind to Tailscale IP only
+      - "${TAILSCALE_IP}:5050:80"
+    networks:
+      - usm-network
+    depends_on:
+      - postgres
+
+  # MinIO - S3-Compatible Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: usm-autoimmune-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    ports:
+      # API port (S3 compatible)
+      - "${TAILSCALE_IP}:9000:9000"
+      # Console port (Web UI)
+      - "${TAILSCALE_IP}:9001:9001"
+    networks:
+      - usm-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+networks:
+  usm-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  minio_data:
+    driver: local

@@ -1,0 +1,96 @@
+# ============================================
+# USM Autoimmune ML Platform - Python Dependencies
+# Data Engineer: Syarifah Fajriyah
+# Last Updated: March 11, 2026
+# ============================================
+
+# Core Data & ETL Libraries
+pandas==2.1.4
+numpy==1.26.2
+SQLAlchemy==2.0.23
+openpyxl==3.1.2
+pyarrow==14.0.1  # Parquet support (industry standard)
+python-docx==1.1.0  # Word document support
+lxml==5.1.0  # XML parsing
+scikit-learn==1.3.2
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+joblib==1.3.2
+imbalanced-learn==0.11.0
+
+# OCR & Document Processing
+pdfplumber==0.10.3  # PDF text extraction
+PyPDF2==3.0.1  # Alternative PDF library
+PyMuPDF>=1.23.0  # Advanced PDF library (imported as fitz) - for Qwen pipeline
+pytesseract==0.3.10  # OCR for images
+# paddleocr==2.7.0.3  # Advanced OCR (optional, large dependency)
+# paddlepaddle==2.6.2
+opencv-python==4.8.1.78  # Image processing
+Pillow==10.1.0  # Image support
+pdf2image==1.16.3  # Convert PDF to images for OCR
+# ftfy==6.1.3
+
+# NLP & Medical Text Processing (Temporarily disabled)
+#spacy==3.6.1
+#scispacy==0.5.3
+# Download models after install:
+# python -m spacy download en_core_web_sm
+# pip install https://s3-us-west-2.amazonaws.com/ai2-s3-scispacy/releases/v0.5.3/en_core_sci_sm-0.5.3.tar.gz
+
+# Medical Image Processing
+pydicom==2.4.4
+albumentations==1.3.1
+
+# ML Training & Experiment Tracking (Iznie's layer, but needed for environment)
+catboost==1.2.2
+xgboost==2.0.3
+lightgbm==4.1.0  # Fast gradient boosting
+mlflow==2.9.2  # Experiment tracking (optional)
+optuna==3.5.0  # Hyperparameter optimization
+shap==0.44.0  # Model interpretability
+matplotlib==3.8.2  # Plotting for SHAP, ROC curves, etc.
+seaborn==0.13.0  # Statistical plotting
+# PyTorch with CUDA 12.1 - UPGRADED for Qwen3VL compatibility
+torch>=2.4.0  # Qwen3VL requires PyTorch 2.4+
+torchvision>=0.19.0  # Updated to match PyTorch 2.4
+
+# VLM - Vision Language Models & Conversational AI
+transformers>=4.38.0  # Hugging Face Transformers (Qwen3-VL + Gemma-4-E4B support)
+accelerate>=0.25.0  # Model acceleration for large models
+sentencepiece>=0.1.99  # Tokenization
+einops>=0.7.0  # Tensor operations for vision models
+qwen-vl-utils  # Vision processing utilities for Qwen3-VL
+bitsandbytes>=0.46.1  # INT8 quantization for faster inference
+# Note: Gemma-4-E4B (google/gemma-4-E4B) for conversational AI - auto-downloaded on first use
+
+# API & Security
+fastapi==0.108.0
+uvicorn[standard]==0.25.0
+pydantic==2.5.3
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.6
+
+# Data Validation & Schema
+pydantic-settings==2.1.0
+email-validator==2.1.0
+
+# Database Migrations
+alembic==1.13.1
+
+# Object Storage
+minio==7.2.0  # MinIO Python SDK for object storage
+
+# Utilities
+psutil==5.9.6
+tqdm==4.66.1
+requests==2.31.0
+aiofiles==23.2.1
+
+# Development & Testing (Optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+black==23.12.1
+flake8==6.1.0
