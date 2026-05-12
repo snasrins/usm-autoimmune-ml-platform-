@@ -325,7 +325,7 @@ export default function DashboardLayout({ children }) {
         {/* Global Training Status Bar (appears on all pages when training is active) */}
         <TrainingStatusBar />
         
-        <div className="flex-1">{children}</div>
+        <div className="flex-1 flex flex-col overflow-hidden">{children}</div>
         
         {/* Footer */}
         <footer className="bg-white/60 dark:bg-[#0F0F11] backdrop-blur-sm border-t border-white/40 dark:border-white/[0.06] py-3 px-6 transition-colors">

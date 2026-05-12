@@ -8,21 +8,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Upload,
   Download,
   Brain,
   CheckCircle,
   AlertCircle,
-  Clock,
   PlayCircle,
   RefreshCw,
-  FileText,
   Target,
   BarChart3,
-  Eye,
-  ArrowLeft,
   Zap,
-  Database
+  Database,
+  Layers
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import PageHeader from '../components/PageHeader';
@@ -34,14 +30,16 @@ export default function BatchPredictionPage() {
   
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
-  const [uploadedFile, setUploadedFile] = useState(null);
+  const [datasets, setDatasets] = useState([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState(null);
   const [predicting, setPredicting] = useState(false);
   const [predictions, setPredictions] = useState(null);
   const [error, setError] = useState(null);
 
-  // Fetch available models and load user
+  // Fetch available models, datasets and load user
   useEffect(() => {
     fetchModels();
+    fetchDatasets();
     const loadUser = async () => {
       try {
         const userData = await authAPI.getCurrentUser();
@@ -71,28 +69,24 @@ export default function BatchPredictionPage() {
     }
   };
 
+  const fetchDatasets = async () => {
+    try {
+      const data = await mlAPI.listDatasets(50, 0);
+      setDatasets(data.datasets || []);
+    } catch (err) {
+      console.error('Error fetching datasets:', err);
+    }
+  };
+
   const extractAlgorithm = (modelName) => {
     const parts = modelName.split(' ');
     return parts.slice(0, -1).join(' ') || modelName;
   };
 
-  // Handle file upload
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (!file.name.endsWith('.csv') && !file.name.endsWith('.xlsx')) {
-        setError('Please upload a CSV or Excel file');
-        return;
-      }
-      setUploadedFile(file);
-      setError(null);
-    }
-  };
-
   // Run batch prediction
   const runPrediction = async () => {
-    if (!selectedModel || !uploadedFile) {
-      setError('Please select a model and upload a file');
+    if (!selectedModel || !selectedDatasetId) {
+      setError('Please select a model and a dataset');
       return;
     }
 
@@ -100,8 +94,8 @@ export default function BatchPredictionPage() {
     setError(null);
 
     try {
-      // Call actual API endpoint
-      const response = await mlAPI.batchPredict(selectedModel.id, uploadedFile);
+      // Call actual API endpoint using dataset_id
+      const response = await mlAPI.batchPredictByDataset(selectedModel.id, selectedDatasetId);
       
       // Transform response to match expected format
       const predictionResults = {
@@ -164,23 +158,21 @@ export default function BatchPredictionPage() {
           {/* Top Actions */}
           <div className="flex justify-end">
             <button
-              onClick={fetchModels}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
+              onClick={() => { fetchModels(); fetchDatasets(); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
             >
               <RefreshCw className="w-4 h-4" />
-              Refresh Models
+              Refresh
             </button>
           </div>
 
           {/* Content */}
-          <div className="space-y-6">
+          <div className="space-y-5">
             {/* Step 1: Select Model */}
-            <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-purple-primary text-white flex items-center justify-center font-bold text-sm">
-                  1
-                </div>
-                <h3 className="font-syne text-lg font-bold text-black-text">Select Trained Model</h3>
+                <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-sm">1</div>
+                <h3 className="font-semibold text-base text-gray-800">Select Trained Model</h3>
               </div>
 
               {models.length === 0 ? (
@@ -192,8 +184,7 @@ export default function BatchPredictionPage() {
                     className="px-6 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all"
                   >
                     Train Models
-                  </button>
-                </div>
+                  </button>                </div>                </div>
               ) : (
                 <div className="grid grid-cols-3 gap-4">
                   {models.map((model) => (
@@ -202,20 +193,20 @@ export default function BatchPredictionPage() {
                       onClick={() => setSelectedModel(model)}
                       className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
                         selectedModel?.id === model.id
-                          ? 'border-purple-primary bg-purple-50'
-                          : 'border-gray-200 bg-white hover:border-purple-primary/40'
+                          ? 'border-purple-600 bg-purple-50'
+                          : 'border-gray-200 bg-white hover:border-purple-300'
                       }`}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
-                          <h4 className="font-semibold text-sm text-black-text mb-1">{model.name}</h4>
-                          <p className="text-xs text-gray-muted">{model.algorithm}</p>
+                          <h4 className="font-semibold text-sm text-gray-900 mb-1">{model.name}</h4>
+                          <p className="text-xs text-gray-500">{model.algorithm}</p>
                         </div>
                         {selectedModel?.id === model.id && (
-                          <CheckCircle className="w-5 h-5 text-purple-primary" />
+                          <CheckCircle className="w-5 h-5 text-purple-600" />
                         )}
                       </div>
-                      <div className="flex items-center justify-between text-xs mt-3 pt-3 border-t border-gray-200">
+                      <div className="flex items-center justify-between text-xs mt-3 pt-3 border-t border-gray-100">
                         <span className="text-gray-600">Accuracy</span>
                         <span className="font-bold text-purple-primary">{model.accuracy}%</span>
                       </div>
@@ -225,91 +216,81 @@ export default function BatchPredictionPage() {
               )}
             </div>
 
-            {/* Step 2: Upload Data */}
-            <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
+            {/* Step 2: Select Dataset */}
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                  selectedModel ? 'bg-purple-primary text-white' : 'bg-gray-200 text-gray-500'
-                }`}>
-                  2
-                </div>
-                <h3 className="font-syne text-lg font-bold text-black-text">Upload Data File</h3>
+                  selectedModel ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-500'
+                }`}>2</div>
+                <h3 className="font-semibold text-base text-gray-800">Select Dataset</h3>
               </div>
-
               <div className={`${!selectedModel ? 'opacity-50 pointer-events-none' : ''}`}>
-                <div className="border-2 border-dashed border-purple-primary/30 rounded-xl p-8 text-center hover:border-purple-primary/60 hover:bg-purple-dim/10 transition-all">
-                  <input
-                    type="file"
-                    accept=".csv,.xlsx"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="file-upload"
-                    disabled={!selectedModel}
-                  />
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <Upload className="w-12 h-12 text-purple-primary mx-auto mb-3" />
-                    <h4 className="font-semibold text-black-text mb-2">
-                      {uploadedFile ? uploadedFile.name : 'Drop CSV file here or click to browse'}
-                    </h4>
-                    <p className="text-sm text-gray-muted">
-                      {uploadedFile 
-                        ? `File size: ${(uploadedFile.size / 1024).toFixed(2)} KB` 
-                        : 'CSV or Excel files only • Must have same schema as training data'}
-                    </p>
-                  </label>
-                </div>
-
-                {uploadedFile && (
-                  <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                      <div>
-                        <div className="font-semibold text-green-900">File Ready</div>
-                        <div className="text-sm text-green-700">{uploadedFile.name}</div>
-                      </div>
-                    </div>
+                {datasets.length === 0 ? (
+                  <div className="text-center py-6 border border-dashed border-gray-200 rounded-lg">
+                    <Layers className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">No datasets available in the system</p>
                     <button
-                      onClick={() => setUploadedFile(null)}
-                      className="text-sm text-red-600 hover:text-red-700 font-medium"
+                      onClick={() => navigate('/data-preparation')}
+                      className="mt-3 text-sm text-purple-600 hover:text-purple-700 font-medium"
                     >
-                      Remove
+                      Go to Data Preparation
                     </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-3">
+                    {datasets.slice(0, 9).map((ds) => (
+                      <div
+                        key={ds.id || ds.dataset_id}
+                        onClick={() => setSelectedDatasetId(ds.id || ds.dataset_id)}
+                        className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                          selectedDatasetId === (ds.id || ds.dataset_id)
+                            ? 'border-purple-600 bg-purple-50'
+                            : 'border-gray-200 bg-white hover:border-purple-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-1">
+                          <Database className="w-4 h-4 text-purple-400 mt-0.5" />
+                          {selectedDatasetId === (ds.id || ds.dataset_id) && (
+                            <CheckCircle className="w-4 h-4 text-purple-600" />
+                          )}
+                        </div>
+                        <p className="font-medium text-sm text-gray-900 mt-2 truncate">{ds.name || ds.dataset_name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{ds.row_count ? `${ds.row_count.toLocaleString()} rows` : 'Dataset'}</p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </div>
 
             {/* Step 3: Run Prediction */}
-            <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                  selectedModel && uploadedFile ? 'bg-purple-primary text-white' : 'bg-gray-200 text-gray-500'
-                }`}>
-                  3
-                </div>
-                <h3 className="font-syne text-lg font-bold text-black-text">Run Prediction</h3>
+                  selectedModel && selectedDatasetId ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-500'
+                }`}>3</div>
+                <h3 className="font-semibold text-base text-gray-800">Run Prediction</h3>
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-muted mb-2">
+                  <p className="text-sm text-gray-500 mb-2">
                     {!selectedModel && 'Select a model first'}
-                    {selectedModel && !uploadedFile && 'Upload a data file'}
-                    {selectedModel && uploadedFile && !predictions && 'Ready to run predictions'}
+                    {selectedModel && !selectedDatasetId && 'Select a dataset'}
+                    {selectedModel && selectedDatasetId && !predictions && 'Ready to run predictions'}
                     {predictions && `Predicted ${predictions.total_records} records`}
                   </p>
-                  {selectedModel && uploadedFile && (
+                  {selectedModel && selectedDatasetId && (
                     <div className="text-xs text-gray-600">
-                      Model: <span className="font-semibold">{selectedModel.name}</span> • 
-                      File: <span className="font-semibold">{uploadedFile.name}</span>
+                      Model: <span className="font-semibold">{selectedModel.name}</span>
                     </div>
                   )}
                 </div>
 
                 <button
                   onClick={runPrediction}
-                  disabled={!selectedModel || !uploadedFile || predicting}
-                  className="flex items-center gap-2 px-6 py-3 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!selectedModel || !selectedDatasetId || predicting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {predicting ? (
                     <>
@@ -331,22 +312,22 @@ export default function BatchPredictionPage() {
               <>
                 {/* Summary Cards */}
                 <div className="grid grid-cols-4 gap-4">
-                  <div className="bg-white/80 rounded-xl p-4 border border-white/40">
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-gray-muted uppercase">Total Records</span>
-                      <Database className="w-4 h-4 text-purple-primary" />
+                      <span className="text-xs font-semibold text-gray-500 uppercase">Total Records</span>
+                      <Database className="w-4 h-4 text-purple-600" />
                     </div>
-                    <div className="font-syne text-2xl font-bold text-black-text">{predictions.total_records}</div>
+                    <div className="text-2xl font-bold text-gray-900">{predictions.total_records}</div>
                   </div>
                   
                   {Object.entries(predictions.summary).map(([label, count]) => (
-                    <div key={label} className="bg-white/80 rounded-xl p-4 border border-white/40">
+                    <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-gray-muted uppercase">{label}</span>
-                        <Target className="w-4 h-4 text-purple-primary" />
+                        <span className="text-xs font-semibold text-gray-500 uppercase">{label}</span>
+                        <Target className="w-4 h-4 text-purple-600" />
                       </div>
-                      <div className="font-syne text-2xl font-bold text-purple-primary">{count}</div>
-                      <div className="text-xs text-gray-muted mt-1">
+                      <div className="text-2xl font-bold text-purple-600">{count}</div>
+                      <div className="text-xs text-gray-500 mt-1">
                         {((count / predictions.total_records) * 100).toFixed(1)}%
                       </div>
                     </div>
@@ -354,12 +335,12 @@ export default function BatchPredictionPage() {
                 </div>
 
                 {/* Results Table */}
-                <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl overflow-hidden">
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                   <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                     <h3 className="font-syne text-lg font-bold text-black-text">Prediction Results</h3>
                     <button
                       onClick={downloadPredictions}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors text-sm font-medium"
                     >
                       <Download className="w-4 h-4" />
                       Download CSV

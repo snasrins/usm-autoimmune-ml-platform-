@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronRight, Target, Download, CheckCircle2, Sparkles, Info, AlertCircle, Loader2 } from 'lucide-react';
+import { ChevronRight, Target, Download, CheckCircle2, Sparkles, Info, AlertCircle, Loader2, X } from 'lucide-react';
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
 import PageHeader from '../components/PageHeader';
@@ -210,7 +210,7 @@ export default function ClinicalScorecardPage() {
                   onClick={() => setError(null)}
                   className="ml-auto text-red-600 hover:text-red-800"
                 >
-                  ✕
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -292,7 +292,7 @@ export default function ClinicalScorecardPage() {
                       onChange={(e) => setBinningMethod(e.target.value)}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     >
-                      <option value="rolling_mean">Rolling Mean (Research Study) 🏆</option>
+                      <option value="rolling_mean">Rolling Mean (Research Study)</option>
                       <option value="quantile">Quantile (equal frequency)</option>
                       <option value="equal_width">Equal Width (equal intervals)</option>
                       <option value="target_based">Target-Based (maximize separation)</option>

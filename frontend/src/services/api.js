@@ -1071,6 +1071,14 @@ export const mlAPI = {
     return response.data;
   },
 
+  batchPredictByDataset: async (modelId, datasetId) => {
+    const response = await api.post('/ml/predict/batch', {
+      model_id: modelId,
+      dataset_id: datasetId,
+    });
+    return response.data;
+  },
+
   /**
    * Run complete preprocessing pipeline (all 4 steps)
    * @param {string} datasetId - Dataset ID
