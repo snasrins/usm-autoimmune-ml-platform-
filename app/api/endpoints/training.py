@@ -1165,14 +1165,14 @@ async def list_trained_models(
         
         # Filter by job type if specified
         if model_type == 'base_model':
-            query = query.filter(TrainingJob.job_type == JobType.BASE_MODEL_TRAINING)
+            query = query.filter(TrainingJob.job_type == JobType.BASE_MODEL)
         elif model_type == 'ensemble':
-            query = query.filter(TrainingJob.job_type == JobType.ENSEMBLE_TRAINING)
+            query = query.filter(TrainingJob.job_type == JobType.ENSEMBLE)
         else:
             # Get both base models and ensembles
             query = query.filter(TrainingJob.job_type.in_([
-                JobType.BASE_MODEL_TRAINING,
-                JobType.ENSEMBLE_TRAINING
+                JobType.BASE_MODEL,
+                JobType.ENSEMBLE
             ]))
         
         # Sort by completion time (newest first) and limit
@@ -1185,7 +1185,7 @@ async def list_trained_models(
                 result = job.result or {}
                 
                 # Determine model type
-                if job.job_type == JobType.BASE_MODEL_TRAINING:
+                if job.job_type == JobType.BASE_MODEL:
                     model_type_str = 'base_model'
                     model_name = job.model_name or result.get('model_name', 'unknown')
                 else:
