@@ -620,7 +620,6 @@ export default function ModelComparisonPage() {
             )}
           </div>
         </div>
-      </div>
     </DashboardLayout>
   );
 }
