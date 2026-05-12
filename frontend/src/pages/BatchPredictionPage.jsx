@@ -159,17 +159,20 @@ export default function BatchPredictionPage() {
   return (
     <DashboardLayout>
       <PageHeader title="Batch Prediction" subtitle="Predictions" user={user} />
-      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh Models
-              </button>
-            </div>
+      <div className="min-h-screen p-6" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
+        <div className="max-w-6xl mx-auto space-y-6">
+          {/* Top Actions */}
+          <div className="flex justify-end">
+            <button
+              onClick={loadModels}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh Models
+            </button>
           </div>
-        </div>
 
-        {/* Content */}
+          {/* Content */}
         <div className="p-6">
           <div className="max-w-6xl mx-auto space-y-6">
             {/* Step 1: Select Model */}
