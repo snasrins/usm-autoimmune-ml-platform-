@@ -51,8 +51,8 @@ COPY ./app /app
 COPY alembic.ini /alembic.ini
 COPY ./alembic /alembic
 
-# Copy test script
-COPY ./scripts/test_gpu.py /test_gpu.py
+# Copy test script (optional - skip if not exists)
+# COPY ./scripts/test_gpu.py /test_gpu.py
 
 # Set working directory to root (so Python can import 'app' package)
 WORKDIR /
