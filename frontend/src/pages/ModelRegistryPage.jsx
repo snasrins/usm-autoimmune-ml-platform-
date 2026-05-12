@@ -288,53 +288,54 @@ export default function ModelRegistryPage() {
   return (
     <DashboardLayout>
       <PageHeader title="Model Registry" subtitle="Registry" user={user} />
-      <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
-                )}
-                <button
-                  onClick={handleSyncFromMinIO}
-                  disabled={syncing}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Sync models from MinIO storage"
-                >
-                  {syncing ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Syncing...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-4 h-4" />
-                      Sync from MinIO
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={fetchModels}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Refresh
-                </button>
-                <button
-                  onClick={() => setShowEnsembleBuilder(true)}
-                  disabled={baseLearners.length < 2}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={baseLearners.length < 2 ? 'Need at least 2 base learners' : 'Build ensemble from base learners'}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Build Ensemble
-                </button>
-                <button
-                  onClick={() => navigate('/training')}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium"
-                >
-                  <Zap className="w-4 h-4" />
-                  Train New Model
-                </button>
-              </div>
-            </div>
+      <div className="min-h-screen flex flex-col p-6" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
+        <div className="max-w-7xl mx-auto w-full space-y-6">
+          {/* Top Actions Bar */}
+          <div className="flex items-center justify-end gap-3">
+            <button
+              onClick={handleSyncFromMinIO}
+              disabled={syncing}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Sync models from MinIO storage"
+            >
+              {syncing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Sync from MinIO
+                </>
+              )}
+            </button>
+            <button
+              onClick={fetchModels}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowEnsembleBuilder(true)}
+              disabled={baseLearners.length < 2}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              title={baseLearners.length < 2 ? 'Need at least 2 base learners' : 'Build ensemble from base learners'}
+            >
+              <Sparkles className="w-4 h-4" />
+              Build Ensemble
+            </button>
+            <button
+              onClick={() => navigate('/training')}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium"
+            >
+              <Zap className="w-4 h-4" />
+              Train New Model
+            </button>
+          </div>
 
-            {/* Stats */}
+          {/* Stats */}
             <div className="grid grid-cols-4 gap-4">
               <StatCard 
                 icon={Layers} 
