@@ -178,13 +178,14 @@ export default function BatchPredictionPage() {
               {models.length === 0 ? (
                 <div className="text-center py-8">
                   <Brain className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-muted mb-4">No trained models available</p>
+                  <p className="text-gray-500 mb-4">No trained models available</p>
                   <button
                     onClick={() => navigate('/training')}
-                    className="px-6 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all"
+                    className="px-6 py-2.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors"
                   >
                     Train Models
-                  </button>                </div>                </div>
+                  </button>
+                </div>
               ) : (
                 <div className="grid grid-cols-3 gap-4">
                   {models.map((model) => (
@@ -208,7 +209,7 @@ export default function BatchPredictionPage() {
                       </div>
                       <div className="flex items-center justify-between text-xs mt-3 pt-3 border-t border-gray-100">
                         <span className="text-gray-600">Accuracy</span>
-                        <span className="font-bold text-purple-primary">{model.accuracy}%</span>
+                        <span className="font-bold text-purple-600">{model.accuracy}%</span>
                       </div>
                     </div>
                   ))}
