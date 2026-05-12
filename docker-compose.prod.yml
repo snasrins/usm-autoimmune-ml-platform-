@@ -1,0 +1,103 @@
+version: '3.8'
+
+# ============================================
+# PRODUCTION OVERLAY FOR RTX6000 DEPLOYMENT
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# This follows the Aras deployment pattern with nginx as the entry point
+# ============================================
+
+services:
+  # === Backend (FastAPI) - Production Configuration ===
+  fastapi:
+    image: usm-autoimmune-backend:prod
+    container_name: usm-autoimmune-backend-prod
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_SECURE=${MINIO_SECURE}
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      # Production: no bind mounts for code, but keep data volumes
+      - ./data:/data
+      - ./models:/models
+      - ./logs:/logs
+    ports: []  # No external ports - accessed through nginx only
+    networks:
+      - usm-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "300"]
+
+  # === Frontend (React) - Production Build ===
+  frontend:
+    image: usm-autoimmune-frontend:prod
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      target: production
+    container_name: usm-autoimmune-frontend-prod
+    restart: unless-stopped
+    ports: []  # No external ports - accessed through nginx only
+    networks:
+      - usm-network
+
+  # === Nginx (Reverse Proxy) - Entry Point ===
+  nginx:
+    image: nginx:alpine
+    container_name: usm-autoimmune-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"  # This is the port the reverse proxy will target
+    volumes:
+      - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - usm-network
+    depends_on:
+      - fastapi
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # === PostgreSQL - Production Configuration ===
+  postgres:
+    restart: unless-stopped
+    ports: []  # No external ports in production
+
+  # === MinIO - Production Configuration ===
+  minio:
+    restart: unless-stopped
+    ports: []  # No external ports in production
+
+networks:
+  usm-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  minio_data:
+    driver: local

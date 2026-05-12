@@ -320,20 +320,64 @@ npx prettier src/ --check
 
 ## Deployment
 
-### Local / On-Premise
+### Development (Local)
 
 Use `docker-compose up --build` for a single-command deployment on any machine with Docker installed.
 
-### Cloud VM
+```bash
+docker-compose up --build
+```
 
-1. Provision a VM (e.g., AWS EC2, Azure VM, or any Linux server).
-2. Install Docker and Docker Compose.
-3. Clone the repo, configure `.env`, and run `docker-compose up -d`.
-4. *(Optional)* Place Nginx in front for HTTPS termination.
+- Backend: http://localhost:8001
+- Frontend: http://localhost:3000 (if running separately)
+- PostgreSQL: localhost:5432
+- MinIO: localhost:9000 (API), localhost:9001 (Console)
+
+### Production (RTX6000 / Server)
+
+For production deployment following the Aras deployment pattern (nginx entry point, all services containerized):
+
+**📚 See comprehensive deployment guides:**
+- **Quick Start:** [QUICK_DEPLOY_RTX6000.md](./QUICK_DEPLOY_RTX6000.md)
+- **Full Guide:** [DEPLOYMENT_GUIDE_RTX6000.md](./DEPLOYMENT_GUIDE_RTX6000.md)
+- **Summary:** [DEPLOYMENT_SUMMARY.md](./DEPLOYMENT_SUMMARY.md)
+
+**Quick Deploy:**
+
+```bash
+# SSH to server
+ssh mtuser1@100.122.108.118
+
+# Clone repo (first time only)
+cd /home/mtuser1
+git clone https://github.com/snasrins/usm-autoimmune-ml-platform-.git
+cd usm-autoimmune-ml-platform-
+
+# Configure environment
+cp .env.example .env
+nano .env  # Edit with production values
+chmod 600 .env
+
+# Deploy
+chmod +x deploy.sh
+./deploy.sh
+```
+
+This deploys:
+- Nginx (port 80) - Entry point
+- FastAPI Backend (internal)
+- React Frontend (internal)
+- PostgreSQL (internal)
+- MinIO (internal)
+
+**Architecture:**
+```
+Internet → Reverse Proxy VM → Server:80 (nginx) → Backend/Frontend
+```
 
 ### GPU Support
 
-Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) and add the following to the backend service in `docker-compose.yml`:
+The platform includes GPU support for accelerated model training. The NVIDIA Container Toolkit is already configured in the `docker-compose.yml`:
 
 ```yaml
 deploy:
@@ -341,9 +385,11 @@ deploy:
     reservations:
       devices:
         - driver: nvidia
-          count: all
+          count: 1
           capabilities: [gpu]
 ```
+
+Ensure the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed on your host machine.
 
 ---
 
