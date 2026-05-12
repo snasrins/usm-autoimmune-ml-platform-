@@ -173,8 +173,7 @@ export default function BatchPredictionPage() {
           </div>
 
           {/* Content */}
-        <div className="p-6">
-          <div className="max-w-6xl mx-auto space-y-6">
+          <div className="space-y-6">
             {/* Step 1: Select Model */}
             <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-4">
