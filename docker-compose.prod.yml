@@ -9,51 +9,22 @@ version: '3.8'
 services:
   # === Backend (FastAPI) - Production Configuration ===
   fastapi:
-    image: usm-autoimmune-backend:prod
     container_name: usm-autoimmune-backend-prod
     restart: unless-stopped
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
-      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - MINIO_SECURE=${MINIO_SECURE}
-      - CUDA_VISIBLE_DEVICES=0
+    ports:
+      - "8000:8000"  # Internal port for nginx to access
     volumes:
-      # Production: no bind mounts for code, but keep data volumes
+      # Production: no bind mounts for code, keep data only
       - ./data:/data
       - ./models:/models
       - ./logs:/logs
-    ports: []  # No external ports - accessed through nginx only
-    networks:
-      - usm-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    command: ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "300"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   # === Frontend (React) - Production Build ===
   frontend:
-    image: usm-autoimmune-frontend:prod
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-      target: production
     container_name: usm-autoimmune-frontend-prod
     restart: unless-stopped
     ports: []  # No external ports - accessed through nginx only
@@ -75,7 +46,7 @@ services:
       - fastapi
       - frontend
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/api/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -83,12 +54,15 @@ services:
   # === PostgreSQL - Production Configuration ===
   postgres:
     restart: unless-stopped
-    ports: []  # No external ports in production
+    ports:
+      - "5432:5432"  # Keep accessible but not on TAILSCALE_IP
 
   # === MinIO - Production Configuration ===
   minio:
     restart: unless-stopped
-    ports: []  # No external ports in production
+    ports:
+      - "9000:9000"
+      - "9001:9001"
 
 networks:
   usm-network:
