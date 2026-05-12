@@ -164,7 +164,7 @@ export default function BatchPredictionPage() {
           {/* Top Actions */}
           <div className="flex justify-end">
             <button
-              onClick={loadModels}
+              onClick={fetchModels}
               className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
             >
               <RefreshCw className="w-4 h-4" />
