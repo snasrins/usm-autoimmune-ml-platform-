@@ -2,9 +2,13 @@ import { useState, useEffect } from 'react';
 import { ChevronRight, Target, Download, CheckCircle2, Sparkles, Info, AlertCircle, Loader2 } from 'lucide-react';
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
+import PageHeader from '../components/PageHeader';
 import { scorecardAPI, trainingAPI } from '../services/api-complete';
+import { authAPI } from '../services/api';
 
 export default function ClinicalScorecardPage() {
+  const [user, setUser] = useState(null);
+  
   // === STATE MANAGEMENT ===
   const [models, setModels] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState(null);
@@ -34,6 +38,15 @@ export default function ClinicalScorecardPage() {
   // === LOAD ON MOUNT ===
   useEffect(() => {
     loadModels();
+    const loadUserData = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUserData();
     
     // Check if we have a pre-selected model from comparison page
     const selectedModelFromComparison = sessionStorage.getItem('selected_model_id');
@@ -182,17 +195,7 @@ export default function ClinicalScorecardPage() {
 
   return (
     <DashboardLayout>
-      {/* Header */}
-      <div className="h-[70px] flex items-center gap-8 px-6 bg-white/85 border-b border-indigo-100 backdrop-blur-md">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-syne text-[18px] font-bold text-[#0F0F11] leading-none">Clinical Scorecard</h1>
-          <div className="flex items-center gap-3 text-[12px] text-[#8585A0]">
-            <span>USM Autoimmune ML Platform</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-indigo-600">Research-Grade Scorecard System</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader title="Clinical Scorecard" subtitle="Patient Scoring" user={user} />
 
       <main className="flex-1 overflow-y-auto p-6 bg-gradient-to-br from-[#eef2ff] via-[#f9fafb] to-[#f0f4ff]" style={{ zoom: 0.9 }}>
         <div className="max-w-7xl mx-auto space-y-6">

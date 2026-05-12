@@ -25,10 +25,12 @@ import {
   Database
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
-import { mlAPI } from '../services/api';
+import PageHeader from '../components/PageHeader';
+import { mlAPI, authAPI } from '../services/api';
 
 export default function BatchPredictionPage() {
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
   
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
@@ -37,9 +39,18 @@ export default function BatchPredictionPage() {
   const [predictions, setPredictions] = useState(null);
   const [error, setError] = useState(null);
 
-  // Fetch available models
+  // Fetch available models and load user
   useEffect(() => {
     fetchModels();
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
   }, []);
 
   const fetchModels = async () => {
@@ -147,26 +158,8 @@ export default function BatchPredictionPage() {
 
   return (
     <DashboardLayout>
+      <PageHeader title="Batch Prediction" subtitle="Predictions" user={user} />
       <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
-        {/* Header */}
-        <div className="bg-white/60 backdrop-blur-sm border-b border-white/40">
-          <div className="px-6 py-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => navigate('/models')}
-                  className="w-10 h-10 rounded-lg border border-white/40 bg-white/80 flex items-center justify-center hover:bg-purple-dim transition-colors"
-                >
-                  <ArrowLeft className="w-5 h-5 text-gray-700" />
-                </button>
-                <div>
-                  <h1 className="font-syne text-2xl font-bold text-black-text">Batch Prediction</h1>
-                  <p className="text-sm text-gray-muted">Deploy models for inference on new data</p>
-                </div>
-              </div>
-
-              <button
-                onClick={fetchModels}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
               >
                 <RefreshCw className="w-4 h-4" />

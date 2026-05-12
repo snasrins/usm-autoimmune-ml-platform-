@@ -31,10 +31,25 @@ import {
   ChevronDown
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
-import { flexibleAPI } from '../services/api';
+import PageHeader from '../components/PageHeader';
+import { flexibleAPI, authAPI } from '../services/api';
 
 export default function DataCatalogPage() {
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  
+  // Load user data
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
+  }, []);
   
   // Search, filters, and sorting
   const [searchQuery, setSearchQuery] = useState('');
@@ -286,28 +301,7 @@ export default function DataCatalogPage() {
   
   return (
     <DashboardLayout>
-      {/* ═══ TOPBAR ═══ */}
-      <div className="h-[70px] flex items-center gap-8 px-6 bg-[#F5F5F7] border-b border-gray-200 flex-shrink-0">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-syne text-[18px] font-bold text-[#0F0F11] leading-none">Data Catalog</h1>
-          <div className="flex items-center gap-3 text-[12px] text-[#8585A0]">
-            <span>USM Autoimmune ML Platform</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-[#7B5CF0]">Data Catalog</span>
-          </div>
-        </div>
-        
-        {/* Right side: Actions */}
-        <div className="ml-auto flex items-center gap-3">
-          <button
-            onClick={() => navigate('/data-preparation')}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#7B5CF0] text-white hover:bg-[#6B4CE0] transition-colors text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Upload Dataset
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Clinical Review" subtitle="Data Catalog" user={user} />
 
       <div className="flex-1 overflow-y-auto p-6" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.80 }}>
         

@@ -20,11 +20,9 @@ import BatchPredictionPage from './pages/BatchPredictionPage';
 import PredictionsHistoryPage from './pages/PredictionsHistoryPage';
 import HyperparameterTuningPage from './pages/HyperparameterTuningPage';
 import UserProfilePage from './pages/UserProfilePage';
-import SettingsPage from './pages/SettingsPage';
 import DataQualityWorkbenchPage from './pages/DataQualityWorkbenchPage';
 import ClinicalScorecardPage from './pages/ClinicalScorecardPage';
 import ModelExplainabilityPage from './pages/ModelExplainabilityPageConnected';
-import GPUMonitoringPage from './pages/GPUMonitoringPage';
 import PatientClassifierPage from './pages/PatientClassifierPage';
 import FeatureImportancePage from './pages/FeatureImportancePage';
 import ExperimentLogPage from './pages/ExperimentLogPage';
@@ -179,14 +177,6 @@ function App() {
           }
         />
         <Route
-          path="/settings"
-          element={
-            <ProtectedRoute>
-              <SettingsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/data-quality"
           element={
             <ProtectedRoute>
@@ -207,14 +197,6 @@ function App() {
           element={
             <ProtectedRoute>
               <ModelExplainabilityPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/gpu-monitoring"
-          element={
-            <ProtectedRoute>
-              <GPUMonitoringPage />
             </ProtectedRoute>
           }
         />

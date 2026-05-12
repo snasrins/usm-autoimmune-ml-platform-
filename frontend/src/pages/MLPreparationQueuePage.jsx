@@ -14,10 +14,26 @@ import {
   Clock, FolderOpen, List, Grid3x3, SortAsc
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import PageHeader from '../components/PageHeader';
 import { flexibleAPI } from '../services/api';
+import { authAPI } from '../services/api';
 
 export default function MLPreparationQueuePage() {
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  
+  // Load user data
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
+  }, []);
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -109,17 +125,7 @@ export default function MLPreparationQueuePage() {
 
   return (
     <DashboardLayout>
-      {/* TOPBAR */}
-      <div className="h-[70px] flex items-center gap-8 px-6 bg-white border-b border-[#e2e8f0] flex-shrink-0">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-syne text-[18px] font-bold text-[#1a0a2e] leading-none">ML Preparation Queue</h1>
-          <div className="flex items-center gap-3 text-[12px] text-[#4a5568]">
-            <span>USM Autoimmune ML Platform</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-[#6b46c1]">ML Queue</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader title="ML Preparation Queue" subtitle="ML Queue" user={user} />
       
       {/* CONTENT */}
       <main className="flex-1 overflow-y-auto p-6 transition-colors relative" style={{ zoom: 0.78, background: '#FAFBFC' }}>

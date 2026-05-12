@@ -26,10 +26,13 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
+import PageHeader from '../components/PageHeader';
 import { trainingAPI } from '../services/api-complete';
+import { authAPI } from '../services/api';
 
 export default function ModelComparisonPage() {
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
   
   const [models, setModels] = useState([]);
   const [selectedModels, setSelectedModels] = useState([]);
@@ -41,6 +44,19 @@ export default function ModelComparisonPage() {
   const [chartType, setChartType] = useState('bar'); // 'bar', 'radar', 'line'
   const modelsPerPage = 4;
 
+  // Load user data
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
+  }, []);
+  
   // Load trained model IDs from sessionStorage (from training workflow)
   useEffect(() => {
     const savedModelIds = sessionStorage.getItem('trained_model_ids');
@@ -222,26 +238,8 @@ export default function ModelComparisonPage() {
 
   return (
     <DashboardLayout>
+      <PageHeader title="Model Comparison" subtitle="Comparison" user={user} />
       <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
-        {/* Header */}
-        <div className="bg-white/60 backdrop-blur-sm border-b border-white/40">
-          <div className="px-6 py-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => navigate('/models')}
-                  className="w-10 h-10 rounded-lg border border-white/40 bg-white/80 flex items-center justify-center hover:bg-purple-dim transition-colors"
-                >
-                  <ArrowLeft className="w-5 h-5 text-gray-700" />
-                </button>
-                <div>
-                  <h1 className="font-syne text-2xl font-bold text-black-text">Model Comparison</h1>
-                  <p className="text-sm text-gray-muted">Compare trained models side-by-side</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
                   onClick={fetchModels}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
                 >

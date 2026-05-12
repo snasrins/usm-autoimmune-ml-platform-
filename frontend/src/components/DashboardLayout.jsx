@@ -92,13 +92,6 @@ export default function DashboardLayout({ children }) {
         { icon: Award, label: 'Patient Scoring', path: '/scorecard', badge: null },
         { icon: Database, label: 'Clinical Review', path: '/data-catalog', badge: null }
       ]
-    },
-    {
-      label: 'System',
-      items: [
-        { icon: Cpu, label: 'GPU Monitor', path: '/gpu-monitoring', badge: null },
-        { icon: Settings, label: 'Settings', path: '/settings', badge: null }
-      ]
     }
   ];
 

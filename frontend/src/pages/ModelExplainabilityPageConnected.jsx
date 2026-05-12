@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import { ChevronRight, Brain, Sparkles, Info, RefreshCw, Download, AlertCircle, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
+import PageHeader from '../components/PageHeader';
 import { explainabilityAPI } from '../services/api-complete';
+import { authAPI } from '../services/api';
 
 export default function ModelExplainabilityPageConnected() {
+  const [user, setUser] = useState(null);
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
   const [tab, setTab] = useState('single');
@@ -16,9 +19,18 @@ export default function ModelExplainabilityPageConnected() {
   const [chatMessages, setChatMessages] = useState([]);
   const [userMessage, setUserMessage] = useState('');
 
-  // Load available models on mount
+  // Load available models and user on mount
   useEffect(() => {
     loadModels();
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
   }, []);
 
   const loadModels = async () => {
@@ -114,16 +126,7 @@ export default function ModelExplainabilityPageConnected() {
 
   return (
     <DashboardLayout>
-      <div className="h-[70px] flex items-center gap-8 px-6 bg-white/85 border-b border-violet-100 backdrop-blur-md">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-syne text-[18px] font-bold text-[#0F0F11] leading-none">Model Explainability</h1>
-          <div className="flex items-center gap-3 text-[12px] text-[#8585A0]">
-            <span>USM Autoimmune ML Platform</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-violet-600">SHAP + Gemma AI Explanations</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader title="Model Explainability" subtitle="Explainability (SHAP + AI)" user={user} />
 
       <main className="flex-1 overflow-y-auto p-6 bg-gradient-to-br from-[#f5f3ff] via-[#faf9fc] to-[#f0edff]" style={{ zoom: 0.9 }}>
         <div className="max-w-7xl mx-auto space-y-6">

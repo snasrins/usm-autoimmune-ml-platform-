@@ -31,7 +31,9 @@ import {
   X
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import PageHeader from '../components/PageHeader';
 import EnsembleTrainingDialog from '../components/EnsembleTrainingDialog';
+import { authAPI } from '../services/api';
 import { mlPreparationAPI, trainingAPI } from '../services/api-complete';
 import { flexibleAPI } from '../services/api';
 
@@ -55,6 +57,20 @@ const AVAILABLE_MODELS = [
 export default function TrainingJobsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [user, setUser] = useState(null);
+  
+  // Load user data
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
+  }, []);
   
   // State management
   const [showNewRunDialog, setShowNewRunDialog] = useState(false);
@@ -473,23 +489,8 @@ export default function TrainingJobsPage() {
 
   return (
     <DashboardLayout>
+      <PageHeader title="Training Jobs" subtitle="Training" user={user} />
       <div className="h-screen flex flex-col" style={{ zoom: 0.75 }}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white/60 backdrop-blur-sm border-b border-white/20">
-          <div>
-            <h1 className="font-syne text-lg font-bold text-black-text">Training Jobs</h1>
-            <p className="text-xs text-gray-muted mt-0.5">
-              Start new training runs, monitor progress, and view results
-            </p>
-          </div>
-          <button
-            onClick={() => setShowDatasetSelector(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 transition-colors text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            New Training Run
-          </button>
-        </div>
 
         {/* Stats Bar */}
         {activeRun && (

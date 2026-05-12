@@ -23,11 +23,13 @@ import {
   Loader2
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
-import { mlAPI } from '../services/api';
+import PageHeader from '../components/PageHeader';
+import { mlAPI, authAPI } from '../services/api';
 import { trainingAPI } from '../services/api-complete';
 
 export default function ModelRegistryPage() {
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
   
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,9 +51,18 @@ export default function ModelRegistryPage() {
   const [ensembleTraining, setEnsembleTraining] = useState(false);
   const [ensembleError, setEnsembleError] = useState(null);
 
-  // Fetch models from API
+  // Fetch models from API and load user
   useEffect(() => {
     fetchModels();
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
   }, []);
   
   // Load active training run from sessionStorage
@@ -276,27 +287,8 @@ export default function ModelRegistryPage() {
 
   return (
     <DashboardLayout>
+      <PageHeader title="Model Registry" subtitle="Registry" user={user} />
       <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
-        {/* Header */}
-        <div className="bg-white/60 backdrop-blur-sm border-b border-white/40">
-          <div className="px-6 py-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-primary to-purple-primary/80 flex items-center justify-center">
-                    <Layers className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="font-syne text-2xl font-bold text-black-text">Model Registry</h1>
-                    <p className="text-xs text-gray-muted">Manage trained ML models</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {syncSuccess && (
-                  <div className="px-3 py-2 rounded-lg bg-green-dim text-green text-xs font-medium animate-fade-in">
-                    {syncSuccess}
-                  </div>
                 )}
                 <button
                   onClick={handleSyncFromMinIO}

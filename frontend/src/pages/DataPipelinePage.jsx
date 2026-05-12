@@ -48,11 +48,27 @@ import {
   ArrowDownUp
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import PageHeader from '../components/PageHeader';
+import { authAPI } from '../services/api';
 
 export default function DataPipelinePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const fileInputRef = useRef(null);
+  const [user, setUser] = useState(null);
+  
+  // Load user data
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const userData = await authAPI.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+      }
+    };
+    loadUser();
+  }, []);
   
   // Get current user from localStorage
   const [currentUser] = useState(() => {
@@ -602,6 +618,7 @@ const [sessionId, setSessionId] = useState(null);
   
   return (
     <DashboardLayout>
+      <PageHeader title="Data Preparation" user={user} />
       <style>{`
         @keyframes gradient {
           0% { background-position: 0% 50%; }
@@ -613,21 +630,8 @@ const [sessionId, setSessionId] = useState(null);
         }
       `}</style>
       
-      {/* ═══ TOPBAR ═══ */}
-      <div className="h-[70px] flex items-center gap-8 px-6 bg-white border-b border-[#e2e8f0] flex-shrink-0 backdrop-blur-md">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-syne text-[18px] font-bold text-[#1a0a2e] leading-none">Data Preparation</h1>
-          <div className="flex items-center gap-3 text-[12px] text-[#4a5568]">
-            <span>USM Autoimmune ML Platform</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-[#6b46c1]">Data Preparation</span>
-          </div>
-        </div>
-        
-        {/* Right side: Actions + Profile */}
-        <div className="ml-auto flex items-center gap-3">
-          {stage !== 'upload' && (
-            <button
+      {/* ═══ CONTENT ═══ */}
+      <main className="flex-1 overflow-y-auto transition-colors relative" style={{ background: '#FAFBFC', zoom: 0.78 }}>
               onClick={handleReset}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-[#e2e8f0] rounded-lg text-sm font-medium text-[#1a0a2e] hover:border-[#7B5CF0]/40 transition-all"
             >

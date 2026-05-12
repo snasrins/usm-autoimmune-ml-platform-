@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { Search, Bell, Settings, ChevronRight, X } from 'lucide-react';
+import { Search, Bell, ChevronRight, X } from 'lucide-react';
 
 /**
  * Standardized Page Header Component
@@ -17,20 +17,18 @@ export default function PageHeader({ title, subtitle, user }) {
   const [searchResults, setSearchResults] = useState([]);
   const [showSearch, setShowSearch] = useState(false);
 
-  // Searchable pages (same as dashboard)
+  // Searchable pages
   const searchablePages = [
     { title: 'Dashboard', route: '/dashboard', keywords: ['home', 'overview', 'stats', 'metrics'] },
-    { title: 'Data Catalog', route: '/data-catalog', keywords: ['upload', 'data', 'import', 'files', 'datasets'] },
     { title: 'Data Preparation', route: '/data-preparation', keywords: ['prep', 'preprocessing', 'labeling', 'label', 'transform'] },
-    { title: 'Data Quality', route: '/data-quality', keywords: ['quality', 'validation', 'checks', 'completeness'] },
+    { title: 'ML Queue', route: '/ml-preparation', keywords: ['ml', 'queue', 'preparation', 'preprocessing'] },
     { title: 'Training Jobs', route: '/training', keywords: ['train', 'model', 'ml', 'machine learning', 'algorithms'] },
-    { title: 'Model Comparison', route: '/models', keywords: ['models', 'compare', 'performance', 'metrics', 'accuracy'] },
-    { title: 'Predictions', route: '/predictions', keywords: ['predict', 'inference', 'forecast', 'test'] },
-    { title: 'Batch Prediction', route: '/batch-prediction', keywords: ['batch', 'bulk', 'multiple predictions'] },
-    { title: 'Explainability (SHAP)', route: '/explainability', keywords: ['shap', 'explain', 'interpret', 'why', 'feature importance'] },
-    { title: 'Settings', route: '/settings', keywords: ['settings', 'config', 'preferences', 'account'] },
-    { title: 'API Keys', route: '/api-keys', keywords: ['api', 'keys', 'authentication', 'tokens'] },
-    { title: 'Users', route: '/users', keywords: ['users', 'admin', 'accounts', 'permissions'] },
+    { title: 'Model Registry', route: '/models', keywords: ['models', 'registry', 'deployed', 'versions'] },
+    { title: 'Model Comparison', route: '/model-comparison', keywords: ['compare', 'performance', 'metrics', 'accuracy'] },
+    { title: 'Explainability', route: '/explainability', keywords: ['shap', 'explain', 'interpret', 'why', 'feature importance'] },
+    { title: 'Predictions', route: '/batch-prediction', keywords: ['predict', 'inference', 'forecast', 'test', 'batch', 'bulk'] },
+    { title: 'Patient Scoring', route: '/scorecard', keywords: ['scorecard', 'scoring', 'patient', 'clinical'] },
+    { title: 'Clinical Review', route: '/data-catalog', keywords: ['clinical', 'review', 'data', 'catalog'] },
   ];
 
   // Search handler
@@ -173,23 +171,6 @@ export default function PageHeader({ title, subtitle, user }) {
             <Tooltip.Portal>
               <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
                 Notifications (3)
-                <Tooltip.Arrow className="fill-gray-900" />
-              </Tooltip.Content>
-            </Tooltip.Portal>
-          </Tooltip.Root>
-
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <button
-                onClick={() => navigate('/settings')}
-                className="w-8 h-8 rounded-lg bg-[#f7f7f7] border border-[#e2e8f0] flex items-center justify-center hover:border-[#6b46c1]/30 transition-all"
-              >
-                <Settings className="w-3.5 h-3.5 text-[#4a5568]" />
-              </button>
-            </Tooltip.Trigger>
-            <Tooltip.Portal>
-              <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
-                Settings
                 <Tooltip.Arrow className="fill-gray-900" />
               </Tooltip.Content>
             </Tooltip.Portal>
