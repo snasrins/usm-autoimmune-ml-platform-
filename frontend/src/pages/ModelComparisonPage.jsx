@@ -288,12 +288,7 @@ export default function ModelComparisonPage() {
                 </button>
               )}
             </div>
-          </div>
-        </div>
 
-        {/* Content */}
-        <div className="p-6">
-          <div className="max-w-7xl mx-auto space-y-6">
             {/* Model Selection Grid */}
             {!comparisonData && (
               <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
