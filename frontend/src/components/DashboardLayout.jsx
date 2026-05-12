@@ -130,7 +130,7 @@ export default function DashboardLayout({ children }) {
         />
 
         {/* Brand with Toggle */}
-        <div className="h-16 flex items-center gap-2.5 px-3 border-b border-white/[0.06] relative z-10" style={{ paddingTop: '8px' }}>
+        <div className="h-16 flex items-center justify-center gap-2.5 px-3 border-b border-white/[0.06] relative z-10" style={{ paddingTop: '8px' }}>
           <button
             onClick={() => setSidebarExpanded(!sidebarExpanded)}
             className="group/toggle flex-shrink-0 relative transition-all cursor-pointer"
@@ -268,15 +268,14 @@ export default function DashboardLayout({ children }) {
 
           {/* Premium Glass User Profile Strip */}
           <div 
-            className="rounded-2xl transition-all duration-300 flex items-center"
+            className="rounded-2xl transition-all duration-300 flex items-center justify-center"
             style={{
               background: sidebarExpanded ? 'rgba(255,255,255,0.08)' : 'transparent',
               backdropFilter: sidebarExpanded ? 'blur(12px)' : 'none',
               border: sidebarExpanded ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
               boxShadow: sidebarExpanded ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 8px 32px rgba(0,0,0,0.12)' : 'none',
-              padding: sidebarExpanded ? '10px' : '0',
+              padding: sidebarExpanded ? '10px' : '8px',
               gap: sidebarExpanded ? '10px' : '0',
-              justifyContent: sidebarExpanded ? 'flex-start' : 'center',
             }}
           >
             <button

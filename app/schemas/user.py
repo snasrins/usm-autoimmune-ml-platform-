@@ -11,7 +11,7 @@ class UserBase(BaseModel):
     email: EmailStr
     username: str
     full_name: Optional[str] = None
-    role: Optional[str] = "user"
+    role: Optional[str] = "researcher"  # Default role for new signups
 
 
 class UserCreate(UserBase):
