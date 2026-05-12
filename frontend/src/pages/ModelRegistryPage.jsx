@@ -458,7 +458,6 @@ export default function ModelRegistryPage() {
                 <p className="text-sm text-gray-muted">Try adjusting your search or filters</p>
               </div>
             )}
-          </div>
         </div>
       </div>
 
