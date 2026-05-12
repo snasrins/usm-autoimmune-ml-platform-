@@ -632,35 +632,6 @@ const [sessionId, setSessionId] = useState(null);
       
       {/* ═══ CONTENT ═══ */}
       <main className="flex-1 overflow-y-auto transition-colors relative" style={{ background: '#FAFBFC', zoom: 0.78 }}>
-              onClick={handleReset}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-[#e2e8f0] rounded-lg text-sm font-medium text-[#1a0a2e] hover:border-[#7B5CF0]/40 transition-all"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Start Over
-            </button>
-          )}
-          <button className="relative w-8 h-8 rounded-lg bg-[#f7f7f7] border border-[#e2e8f0] flex items-center justify-center hover:border-[#7B5CF0]/30 transition-all">
-            <Bell className="w-3.5 h-3.5 text-[#4a5568]" />
-          </button>
-          <button className="w-8 h-8 rounded-lg bg-[#f7f7f7] border border-[#e2e8f0] flex items-center justify-center hover:border-[#7B5CF0]/30 transition-all">
-            <Settings className="w-3.5 h-3.5 text-[#4a5568]" />
-          </button>
-          
-          {/* Profile */}
-          <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-200 to-purple-300 flex items-center justify-center text-purple-700 text-sm font-semibold">
-                {currentUser.full_name ? currentUser.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
-              </div>
-              <span className="text-sm font-medium text-gray-700">
-                {currentUser.username || currentUser.full_name || 'User'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto" style={{ background: stage === 'upload' ? '#ffffff' : 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.85, padding: stage === 'upload' ? 0 : '1.5rem' }}>
 
         {/* Error Message */}
         {error && (
