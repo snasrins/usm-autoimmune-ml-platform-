@@ -1222,7 +1222,7 @@ const [sessionId, setSessionId] = useState(null);
             </div>
           )}
         </div>
-      </div>
+      </main>
     </DashboardLayout>
   );
 }
