@@ -482,9 +482,8 @@ export default function ModelRegistryPage() {
             )}
           </div>
         </div>
-      </div>
 
-      {/* Model Details Modal */}
+        {/* Model Details Modal */}
       {selectedModel && modelMetrics && (
         <ModelMetricsModal 
           model={models.find(m => m.id === selectedModel)}
