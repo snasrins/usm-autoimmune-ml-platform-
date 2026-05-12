@@ -197,7 +197,7 @@ export default function ClinicalScorecardPage() {
     <DashboardLayout>
       <PageHeader title="Clinical Scorecard" subtitle="Patient Scoring" user={user} />
 
-      <main className="flex-1 overflow-y-auto p-6 bg-gradient-to-br from-[#eef2ff] via-[#f9fafb] to-[#f0f4ff]" style={{ zoom: 0.9 }}>
+      <main className="flex-1 overflow-y-auto p-6" style={{ zoom: 0.78, background: '#FAFBFC' }}>
         <div className="max-w-7xl mx-auto space-y-6">
           
           {/* Error Display */}

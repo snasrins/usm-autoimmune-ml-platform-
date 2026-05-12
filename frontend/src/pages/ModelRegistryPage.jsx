@@ -288,47 +288,31 @@ export default function ModelRegistryPage() {
   return (
     <DashboardLayout>
       <PageHeader title="Model Registry" subtitle="Registry" user={user} />
-      <div className="min-h-screen flex flex-col p-6" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
-        <div className="max-w-7xl mx-auto w-full space-y-6">
+      <div className="flex-1 overflow-y-auto" style={{ background: '#FAFBFC', zoom: 0.78 }}>
+        <div className="max-w-7xl mx-auto p-6 space-y-6">
           {/* Top Actions Bar */}
-          <div className="flex items-center justify-end gap-3">
-            <button
-              onClick={handleSyncFromMinIO}
-              disabled={syncing}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Sync models from MinIO storage"
-            >
-              {syncing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Syncing...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  Sync from MinIO
-                </>
-              )}
-            </button>
-            <button
-              onClick={fetchModels}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </button>
-            <button
-              onClick={() => setShowEnsembleBuilder(true)}
-              disabled={baseLearners.length < 2}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              title={baseLearners.length < 2 ? 'Need at least 2 base learners' : 'Build ensemble from base learners'}
-            >
-              <Sparkles className="w-4 h-4" />
-              Build Ensemble
-            </button>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={fetchModels}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Refresh
+              </button>
+              <button
+                onClick={() => setShowEnsembleBuilder(true)}
+                disabled={baseLearners.length < 2}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-200 bg-white text-purple-700 hover:bg-purple-50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                title={baseLearners.length < 2 ? 'Need at least 2 base learners' : 'Build ensemble from base learners'}
+              >
+                <Sparkles className="w-4 h-4" />
+                Build Ensemble
+              </button>
+            </div>
             <button
               onClick={() => navigate('/training')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
             >
               <Zap className="w-4 h-4" />
               Train New Model
@@ -336,7 +320,7 @@ export default function ModelRegistryPage() {
           </div>
 
           {/* Stats */}
-            <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-4 gap-4">
               <StatCard 
                 icon={Layers} 
                 label="Total Models" 
@@ -360,49 +344,43 @@ export default function ModelRegistryPage() {
                 label="Avg Accuracy" 
                 value={`${avgAccuracy}%`} 
                 color="amber" 
-              />
-            </div>
+            />
           </div>
-        </div>
 
-        {/* Filters */}
-        <div className="px-6 py-4 bg-white/40 backdrop-blur-sm border-b border-white/40">
+          {/* Search & Filters */}
           <div className="flex items-center gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-muted" />
+            <div className="flex-1 relative max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search models by name or algorithm..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-white/40 bg-white/80 backdrop-blur-sm focus:outline-none focus:border-purple-primary focus:ring-2 focus:ring-purple-primary/20 text-sm"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 text-sm"
               />
             </div>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2.5 rounded-lg border border-white/40 bg-white/80 backdrop-blur-sm focus:outline-none focus:border-purple-primary focus:ring-2 focus:ring-purple-primary/20 text-sm min-w-[140px]"
+              className="px-4 py-2.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 text-sm min-w-[140px]"
             >
               <option value="all">All Status</option>
               <option value="promoted">Promoted</option>
               <option value="draft">Draft</option>
             </select>
           </div>
-        </div>
 
-        {/* Content */}
-        <div className="flex-1 p-6">
-          <div className="max-w-7xl mx-auto space-y-6">
+          {/* Models */}
             {/* Ensemble Models Section */}
             {ensembleModels.length > 0 && (
-              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 bg-gradient-to-r from-purple-50 to-purple-50/50 border-b border-purple-200">
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-5 py-4 bg-purple-50 border-b border-purple-100">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-purple-primary" />
-                    <h2 className="font-syne text-base font-bold text-purple-primary">
-                      Ensemble Models (Meta-Learners)
+                    <Sparkles className="w-5 h-5 text-purple-600" />
+                    <h2 className="font-semibold text-base text-purple-700">
+                      Ensemble Models
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-purple-primary text-white text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-purple-600 text-white text-xs font-bold">
                       {ensembleModels.length}
                     </span>
                   </div>
@@ -424,11 +402,11 @@ export default function ModelRegistryPage() {
 
             {/* Base Learners Section */}
             {baseLearners.length > 0 && (
-              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 bg-white/60 border-b border-white/40">
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-5 py-4 bg-gray-50 border-b border-gray-200">
                   <div className="flex items-center gap-2">
                     <Brain className="w-5 h-5 text-blue-500" />
-                    <h2 className="font-syne text-base font-bold text-black-text">
+                    <h2 className="font-semibold text-base text-gray-800">
                       Base Learners
                     </h2>
                     <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 text-xs font-bold">
@@ -458,7 +436,7 @@ export default function ModelRegistryPage() {
 
             {/* Empty State */}
             {models.length === 0 && (
-              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-12 text-center">
+              <div className="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
                 <Layers className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="font-syne text-lg font-bold text-black-text mb-2">No Models Found</h3>
                 <p className="text-sm text-gray-muted mb-6">Train your first model to get started</p>
@@ -474,7 +452,7 @@ export default function ModelRegistryPage() {
 
             {/* No Results from Filter */}
             {models.length > 0 && filteredModels.length === 0 && (
-              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-8 text-center">
+              <div className="bg-white border border-gray-200 rounded-xl p-8 text-center shadow-sm">
                 <Search className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                 <h3 className="font-syne text-base font-bold text-black-text mb-1">No matching models</h3>
                 <p className="text-sm text-gray-muted">Try adjusting your search or filters</p>
@@ -482,8 +460,9 @@ export default function ModelRegistryPage() {
             )}
           </div>
         </div>
+      </div>
 
-        {/* Model Details Modal */}
+      {/* Model Details Modal */}
       {selectedModel && modelMetrics && (
         <ModelMetricsModal 
           model={models.find(m => m.id === selectedModel)}

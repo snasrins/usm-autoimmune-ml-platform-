@@ -490,7 +490,7 @@ export default function TrainingJobsPage() {
   return (
     <DashboardLayout>
       <PageHeader title="Training Jobs" subtitle="Training" user={user} />
-      <div className="h-screen flex flex-col" style={{ zoom: 0.75 }}>
+      <div className="h-screen flex flex-col" style={{ zoom: 0.78, background: '#FAFBFC' }}>
 
         {/* Stats Bar */}
         {activeRun && (
