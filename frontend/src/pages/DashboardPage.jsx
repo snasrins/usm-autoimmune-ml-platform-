@@ -5,6 +5,7 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { authAPI, dashboardAPI, mlAPI } from '../services/api';
 import { explainabilityAPI } from '../services/api-complete';
 import DashboardLayout from '../components/DashboardLayout';
+import PageHeader from '../components/PageHeader';
 import MissionControlModal from '../components/MissionControlModal';
 
 // Phase 3 Dashboard Components
@@ -21,20 +22,8 @@ import {
   Database,
   List,
   Play,
-  Search,
-  Bell,
-  Settings,
-  Plus,
-  FileStack,
-  FolderOpen,
-  Zap,
-  Layers,
-  CircleUserRound,
-  CheckCircle,
-  Activity,
   Upload,
   Brain,
-  X
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -44,44 +33,24 @@ export default function DashboardPage() {
   const [showMissionControl, setShowMissionControl] = useState(
     () => sessionStorage.getItem('mc_dismissed') !== '1'
   );
-  
-  // Search state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [showSearch, setShowSearch] = useState(false);
-  
-  // Searchable pages
-  const searchablePages = [
-    { title: 'Dashboard', route: '/dashboard', keywords: ['home', 'overview', 'stats', 'metrics'] },
-    { title: 'Data Catalog', route: '/data-catalog', keywords: ['upload', 'data', 'import', 'files', 'datasets'] },
-    { title: 'Data Preparation', route: '/data-preparation', keywords: ['prep', 'preprocessing', 'labeling', 'label', 'transform'] },
-    { title: 'Data Quality', route: '/data-quality', keywords: ['quality', 'validation', 'checks', 'completeness'] },
-    { title: 'Training Jobs', route: '/training', keywords: ['train', 'model', 'ml', 'machine learning', 'algorithms'] },
-    { title: 'Model Comparison', route: '/models', keywords: ['models', 'compare', 'performance', 'metrics', 'accuracy'] },
-    { title: 'Predictions', route: '/predictions', keywords: ['predict', 'inference', 'forecast', 'test'] },
-    { title: 'Batch Prediction', route: '/batch-prediction', keywords: ['batch', 'bulk', 'multiple predictions'] },
-    { title: 'Explainability (SHAP)', route: '/explainability', keywords: ['shap', 'explain', 'interpret', 'why', 'feature importance'] },
-    { title: 'Settings', route: '/settings', keywords: ['settings', 'config', 'preferences', 'account'] },
-    { title: 'API Keys', route: '/api-keys', keywords: ['api', 'keys', 'authentication', 'tokens'] },
-    { title: 'Users', route: '/users', keywords: ['users', 'admin', 'accounts', 'permissions'] },
-  ];
 
-  // Real data from API (GPU kept as mock per request)
+  // Real data from API
   const [stats, setStats] = useState({
     totalDatasets: 0,
     totalRecords: 0,
     modelsDeployed: 0,
     trainingJobs: 0,
-    gpuUsageHours: 5.2,    // Mock GPU (user requested)
-    gpuLimit: 8,           // Mock GPU (user requested)
-    vramUsed: 18.4,        // Mock GPU (user requested)
-    vramTotal: 24,         // Mock GPU (user requested)
+    gpuUsagePercent: 0,      // Dynamic GPU percentage
+    gpuMemoryUsed: 0,        // Dynamic GPU memory used (GB)
+    gpuMemoryTotal: 24,      // Dynamic GPU memory total (GB)
     experimentsRunning: 0,
     pipelinesActive: 0,
     labeledRecords: 0,
     unlabeledRecords: 0,
     totalUsers: 0,
-    totalPatients: 0
+    totalPatients: 0,
+    dataQualityIssues: 0,    // Dynamic data quality issues count
+    dataQualityMissingPct: 0 // Dynamic missing values percentage
   });
 
   const [alerts, setAlerts] = useState([]);
@@ -105,46 +74,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadData();
-    
-    // Keyboard shortcut for search (Cmd+K or Ctrl+K)
-    const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setShowSearch(prev => !prev);
-      }
-      if (e.key === 'Escape') {
-        setShowSearch(false);
-        setSearchQuery('');
-        setSearchResults([]);
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-  
-  // Search handler
-  const handleSearch = (query) => {
-    setSearchQuery(query);
-    if (query.trim() === '') {
-      setSearchResults([]);
-      return;
-    }
-
-    const lowerQuery = query.toLowerCase();
-    const results = searchablePages.filter(page => 
-      page.title.toLowerCase().includes(lowerQuery) ||
-      page.keywords.some(keyword => keyword.includes(lowerQuery))
-    );
-    setSearchResults(results);
-  };
-
-  const navigateToPage = (route) => {
-    navigate(route);
-    setShowSearch(false);
-    setSearchQuery('');
-    setSearchResults([]);
-  };
 
   const loadData = async () => {
     try {
@@ -303,9 +233,20 @@ export default function DashboardPage() {
         const missingCount = unlabeledCount || 0;
         const missingPct = totalRecordCount > 0 ? (missingCount / totalRecordCount) * 100 : 0;
         
+        // Calculate data quality issues count (missing + estimated outliers)
+        const estimatedOutliers = Math.floor(totalRecordCount * 0.05); // Estimate 5% outliers
+        const qualityIssuesCount = missingCount + estimatedOutliers;
+        
         // Calculate class imbalance from labeling data
         const labeledPct = totalRecordCount > 0 ? (labeledCount / totalRecordCount) * 100 : 50;
         const unlabeledPct = 100 - labeledPct;
+        
+        // Update stats with data quality metrics
+        setStats(prev => ({
+          ...prev,
+          dataQualityIssues: qualityIssuesCount,
+          dataQualityMissingPct: missingPct
+        }));
         
         setDataQuality({
           missingPercent: missingPct,
@@ -313,7 +254,7 @@ export default function DashboardPage() {
             hospital_a: Math.round(labeledPct), 
             hospital_b: Math.round(unlabeledPct) 
           },
-          outliers: Math.floor(totalRecordCount * 0.05), // Estimate 5% outliers
+          outliers: estimatedOutliers,
           dataSources: { 
             count: uploadsData.uploads?.length || 0, 
             distribution: `${Math.round(labeledPct)}%` 
@@ -321,6 +262,37 @@ export default function DashboardPage() {
         });
       } catch (err) {
         console.error('Error calculating data quality:', err);
+      }
+      
+      // ========================================
+      // FETCH GPU USAGE DATA
+      // ========================================
+      try {
+        const systemInfoResponse = await fetch('/api/admin/system-info', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        
+        if (systemInfoResponse.ok) {
+          const systemInfo = await systemInfoResponse.json();
+          
+          if (systemInfo.gpu && systemInfo.gpu.gpu_available) {
+            const gpuMemUsed = systemInfo.gpu.gpu_memory_allocated_gb || 0;
+            const gpuMemTotal = systemInfo.gpu.gpu_memory_total_gb || 24;
+            const gpuUsagePct = Math.round((gpuMemUsed / gpuMemTotal) * 100);
+            
+            setStats(prev => ({
+              ...prev,
+              gpuUsagePercent: gpuUsagePct,
+              gpuMemoryUsed: gpuMemUsed,
+              gpuMemoryTotal: gpuMemTotal
+            }));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching GPU info:', err);
+        // Keep default values on error
       }
       
       // ========================================
@@ -478,183 +450,9 @@ export default function DashboardPage() {
         isOpen={showMissionControl}
         onClose={handleMissionControlClose}
       />
-      <style>{`
-        @keyframes gradient {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        .animate-gradient {
-          animation: gradient 4s ease infinite;
-        }
-      `}</style>
       
-      {/* ═══ TOPBAR ═══ */}
-      <div className="h-[70px] flex items-center gap-8 px-6 bg-white border-b border-[#e2e8f0] flex-shrink-0 backdrop-blur-md transition-colors relative z-10">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-syne text-[18px] font-bold text-[#1a0a2e] leading-none">Dashboard</h1>
-          <div className="flex items-center gap-3 text-[12px] text-[#4a5568]">
-            <span>USM Autoimmune ML Platform</span>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-[#6b46c1]">Dashboard</span>
-          </div>
-        </div>
-        
-        {/* Right side: Search + Actions */}
-        <Tooltip.Provider delayDuration={300}>
-          <div className="ml-auto flex items-center gap-3">
-            {/* Search button/input */}
-            <button
-              onClick={() => setShowSearch(true)}
-              className="relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-md bg-white border border-[#e2e8f0] transition-all hover:border-[#6b46c1]/50 w-64"
-            >
-              <Search className="w-3.5 h-3.5 text-[#4a5568] flex-shrink-0" />
-              <span className="text-[12px] text-[#4a5568]">Search pages...</span>
-              <kbd className="ml-auto px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 rounded">⌘K</kbd>
-            </button>
-            
-            {/* Search Modal - Fixed positioning */}
-            {showSearch && (
-              <>
-                {/* Backdrop */}
-                <div 
-                  className="fixed inset-0 z-[9998] bg-black/20"
-                  onClick={() => {
-                    setShowSearch(false);
-                    setSearchQuery('');
-                    setSearchResults([]);
-                  }}
-                />
-                
-                {/* Search Panel - Centered in viewport */}
-                <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-[9999] w-[600px] bg-white border border-gray-200 rounded-2xl shadow-2xl">
-                    {/* Search Input */}
-                    <div className="flex items-center p-4 border-b border-gray-200">
-                      <Search className="w-4 h-4 text-gray-400 mr-3" />
-                      <input
-                        type="text"
-                        placeholder="Search for pages, settings, or features..."
-                        value={searchQuery}
-                        onChange={(e) => handleSearch(e.target.value)}
-                        className="flex-1 outline-none text-sm"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => {
-                          setShowSearch(false);
-                          setSearchQuery('');
-                          setSearchResults([]);
-                        }}
-                        className="ml-2 p-1 hover:bg-gray-100 rounded"
-                      >
-                        <X className="w-4 h-4 text-gray-500" />
-                      </button>
-                    </div>
-                    
-                    {/* Search Results */}
-                    <div className="max-h-96 overflow-y-auto">
-                      {searchQuery === '' ? (
-                        <div className="p-4 text-sm text-gray-500">
-                          <p className="font-medium mb-2">Quick Access</p>
-                          {searchablePages.slice(0, 6).map((page, i) => (
-                            <button
-                              key={i}
-                              onClick={() => navigateToPage(page.route)}
-                              className="w-full text-left px-3 py-2 hover:bg-purple-50 rounded-lg flex items-center justify-between group"
-                            >
-                              <span className="text-gray-700">{page.title}</span>
-                              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-purple-600" />
-                            </button>
-                          ))}
-                        </div>
-                      ) : searchResults.length > 0 ? (
-                        <div className="p-2">
-                          {searchResults.map((result, i) => (
-                            <button
-                              key={i}
-                              onClick={() => navigateToPage(result.route)}
-                              className="w-full text-left px-4 py-3 hover:bg-purple-50 rounded-lg flex items-center justify-between group transition-colors"
-                            >
-                              <div>
-                                <div className="font-medium text-gray-900">{result.title}</div>
-                                <div className="text-xs text-gray-500 mt-0.5">{result.route}</div>
-                              </div>
-                              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-purple-600" />
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="p-8 text-center">
-                          <div className="text-gray-400 mb-2">
-                            <Search className="w-8 h-8 mx-auto" />
-                          </div>
-                          <p className="text-sm text-gray-500">No results found for "{searchQuery}"</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button className="relative w-8 h-8 rounded-lg bg-[#f7f7f7] border border-[#e2e8f0] flex items-center justify-center hover:border-[#6b46c1]/30 transition-all">
-                  <Bell className="w-3.5 h-3.5 text-[#4a5568]" />
-                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#DC2626] rounded-full border-2 border-white"></span>
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
-                  Notifications (3)
-                  <Tooltip.Arrow className="fill-gray-900" />
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button
-                  onClick={() => navigate('/settings')}
-                  className="w-8 h-8 rounded-lg bg-[#f7f7f7] border border-[#e2e8f0] flex items-center justify-center hover:border-[#6b46c1]/30 transition-all"
-                >
-                  <Settings className="w-3.5 h-3.5 text-[#4a5568]" />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
-                  Settings
-                  <Tooltip.Arrow className="fill-gray-900" />
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-
-            {/* Separator */}
-            <div className="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button
-                  onClick={() => navigate('/profile')}
-                  className="flex items-center gap-2 px-2 h-10 rounded-lg hover:bg-[#f7f7f7] transition-all"
-                >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6b46c1] to-[#9f7aea] flex items-center justify-center text-white font-bold text-sm shadow-md">
-                    {(user?.username || 's.nasrin').substring(0, 2).toUpperCase()}
-                  </div>
-                  <span className="text-sm font-medium text-[#1a0a2e]">
-                    {user?.username || 's.nasrin'}
-                  </span>
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
-                  Open Profile
-                  <Tooltip.Arrow className="fill-gray-900" />
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-          </div>
-        </Tooltip.Provider>
-      </div>
+      {/* ═══ PAGE HEADER ═══ */}
+      <PageHeader title="Dashboard" user={user} />
 
       {/* ═══ CONTENT ═══ */}
       <main className="flex-1 overflow-y-auto p-6 transition-colors relative" style={{ 
@@ -784,15 +582,15 @@ export default function DashboardPage() {
           </motion.div>
           <motion.div whileHover={{ scale: 1.02, y: -3 }} transition={{ type: "spring", stiffness: 300 }}>
             <DataQualityCard 
-              issues={248}
-              missingPercent={17.8}
+              issues={stats.dataQualityIssues}
+              missingPercent={stats.dataQualityMissingPct}
             />
           </motion.div>
           <motion.div whileHover={{ scale: 1.02, y: -3 }} transition={{ type: "spring", stiffness: 300 }}>
             <GPUStatusCard 
-              percentage={62}
-              used={stats.gpuUsageHours}
-              total={stats.gpuLimit}
+              percentage={stats.gpuUsagePercent}
+              used={stats.gpuMemoryUsed.toFixed(1)}
+              total={stats.gpuMemoryTotal.toFixed(0)}
             />
           </motion.div>
           <motion.div whileHover={{ scale: 1.02, y: -3 }} transition={{ type: "spring", stiffness: 300 }}>
