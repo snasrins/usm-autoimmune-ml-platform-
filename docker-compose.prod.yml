@@ -37,7 +37,7 @@ services:
     container_name: usm-autoimmune-nginx
     restart: unless-stopped
     ports:
-      - "80:80"  # This is the port the reverse proxy will target
+      - "8080:80"  # Using 8080 to avoid conflict with Apache2 on port 80
     volumes:
       - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
