@@ -693,24 +693,24 @@ function TrainingJobCard({ job, modelInfo }) {
           {job.status === 'completed' && job.result && (
             <div className="grid grid-cols-6 gap-3 text-xs">
               <div>
-                <div className="text-gray-muted">Accuracy</div>
-                <div className="font-bold text-green">{job.result.accuracy?.toFixed(3) || 'N/A'}</div>
+                <div className="text-gray-muted">OOF AUC</div>
+                <div className="font-bold text-green">{job.result.oof_auc?.toFixed(3) || 'N/A'}</div>
               </div>
               <div>
-                <div className="text-gray-muted">AUC-ROC</div>
-                <div className="font-bold text-purple-primary">{job.result.auc_roc?.toFixed(3) || 'N/A'}</div>
+                <div className="text-gray-muted">Test AUC</div>
+                <div className="font-bold text-purple-primary">{job.result.test_auc?.toFixed(3) || 'N/A'}</div>
               </div>
               <div>
                 <div className="text-gray-muted">Precision</div>
-                <div className="font-bold text-blue-500">{job.result.precision?.toFixed(3) || 'N/A'}</div>
+                <div className="font-bold text-blue-500">{job.result.test_precision?.toFixed(3) || 'N/A'}</div>
               </div>
               <div>
                 <div className="text-gray-muted">Recall</div>
-                <div className="font-bold text-amber">{job.result.recall?.toFixed(3) || 'N/A'}</div>
+                <div className="font-bold text-amber">{job.result.test_recall?.toFixed(3) || 'N/A'}</div>
               </div>
               <div>
                 <div className="text-gray-muted">F1 Score</div>
-                <div className="font-bold text-green">{job.result.f1?.toFixed(3) || 'N/A'}</div>
+                <div className="font-bold text-green">{job.result.test_f1?.toFixed(3) || 'N/A'}</div>
               </div>
               <div>
                 <div className="text-gray-muted">Training Time</div>
@@ -1030,11 +1030,11 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
   
   // Metrics to compare
   const metrics = [
-    { key: 'accuracy', label: 'Accuracy', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
-    { key: 'auc_roc', label: 'AUC-ROC', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-purple-primary' },
-    { key: 'precision', label: 'Precision', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-blue-500' },
-    { key: 'recall', label: 'Recall', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-amber' },
-    { key: 'f1', label: 'F1 Score', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
+    { key: 'oof_auc', label: 'OOF AUC', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
+    { key: 'test_auc', label: 'Test AUC', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-purple-primary' },
+    { key: 'test_precision', label: 'Precision', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-blue-500' },
+    { key: 'test_recall', label: 'Recall', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-amber' },
+    { key: 'test_f1', label: 'F1 Score', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
     { key: 'training_time_seconds', label: 'Training Time', format: (v) => v ? `${Math.round(v)}s` : 'N/A', color: 'text-gray-700' }
   ];
   
