@@ -239,34 +239,37 @@ export default function ModelComparisonPage() {
   return (
     <DashboardLayout>
       <PageHeader title="Model Comparison" subtitle="Comparison" user={user} />
-      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
-                  onClick={fetchModels}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Refresh
-                </button>
-                <button
-                  onClick={runComparison}
-                  disabled={selectedModels.length < 2 || loading}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Comparing...
-                    </>
-                  ) : (
-                    <>
-                      <BarChart3 className="w-4 h-4" />
-                      Compare Selected ({selectedModels.length})
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+      <div className="min-h-screen p-6" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
+        <div className="max-w-7xl mx-auto space-y-6">
+          {/* Top Actions Bar */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={fetchModels}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+            <button
+              onClick={runComparison}
+              disabled={selectedModels.length < 2 || loading}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Comparing...
+                </>
+              ) : (
+                <>
+                  <BarChart3 className="w-4 h-4" />
+                  Compare Selected ({selectedModels.length})
+                </>
+              )}
+            </button>
+          </div>
 
-            {/* Selection Info */}
+          {/* Selection Info */}
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Target className="w-5 h-5 text-purple-primary" />
