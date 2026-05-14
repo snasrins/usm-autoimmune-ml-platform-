@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Tag,
   Sparkles,
@@ -16,7 +16,11 @@ import {
   X,
   Database,
   Settings,
-  Target
+  Target,
+  Search,
+  ChevronDown,
+  Activity,
+  FlaskConical
 } from 'lucide-react';
 import { labelingAPI, mlAPI } from '../services/api';
 
@@ -44,6 +48,24 @@ export default function RuleBasedLabelingWorkflow({ batchId, targetColumn: propT
   // Available columns (fetch from API)
   const [availableColumns, setAvailableColumns] = useState([]);
   const [fetchingColumns, setFetchingColumns] = useState(false);
+
+  // Source column search/combobox state
+  const [colSearch, setColSearch] = useState('');
+  const [showColDropdown, setShowColDropdown] = useState(false);
+  const colRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e) => { if (colRef.current && !colRef.current.contains(e.target)) setShowColDropdown(false); };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filteredColumns = availableColumns.filter(c =>
+    c.toLowerCase().replace(/^other\./i, '').includes(colSearch.toLowerCase())
+  );
+
+  const displayColName = (col) => col.replace(/^other\./i, '');
 
   // Fetch available columns on mount
   useEffect(() => {
@@ -306,54 +328,105 @@ export default function RuleBasedLabelingWorkflow({ batchId, targetColumn: propT
         <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
           <HelpCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <h4 className="font-semibold text-sm text-blue-900 mb-1">How it works</h4>
+            <div className="flex items-center gap-2 mb-1">
+              <h4 className="font-semibold text-sm text-blue-900">How Rule-Based Labelling Works</h4>
+              <span className="text-xs text-blue-500">(hover templates above for detailed explanations)</span>
+            </div>
             <ol className="text-xs text-blue-700 leading-relaxed space-y-1">
-              <li><strong>1. Select source column:</strong> Choose which column to evaluate (e.g., SLEDAI, CRP)</li>
-              <li><strong>2. Define rules:</strong> Create conditions and assign labels (e.g., &lt; 4 = Mild)</li>
-              <li><strong>3. Run labeling:</strong> Apply rules to all records automatically</li>
-              <li><strong>4. Review results:</strong> Check statistics and proceed to next step</li>
+              <li><strong>1. Choose a template</strong> or configure manually below</li>
+              <li><strong>2. Select source column:</strong> which existing data column drives the labels (e.g., SLEDAI score)</li>
+              <li><strong>3. Define rules:</strong> numeric conditions → label (e.g., &lt;4 = Mild)</li>
+              <li><strong>4. Run Labelling:</strong> all records get labelled automatically in seconds</li>
             </ol>
           </div>
         </div>
       </div>
 
-      {/* Quick Preset Templates */}
-      <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Lightbulb className="w-5 h-5 text-amber-600" />
-          <h3 className="font-syne text-lg font-bold text-black-text">Quick Start Templates</h3>
+      {/* What is labelling? Banner */}
+      <div className="bg-white/80 backdrop-blur-sm border border-purple-100 rounded-2xl p-6">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
+            <Tag className="w-5 h-5 text-purple-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-syne text-base font-bold text-gray-900 mb-1">What is Labelling?</h3>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Labelling assigns a <strong>target outcome</strong> (e.g. Mild / Moderate / Severe) to each patient record.
+              The ML model uses these labels as the "answer key" during training — it learns to predict the same outcome for new, unseen patients.
+              Without labels, supervised machine learning cannot run.
+            </p>
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <button
-            onClick={() => loadPreset('severity_sledai')}
-            className="p-4 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50 transition-all text-left"
-          >
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center mb-2">
-              <Target className="w-6 h-6 text-purple-600" />
+      </div>
+
+      {/* Quick Preset Templates */}
+      <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Lightbulb className="w-5 h-5 text-amber-600" />
+          <h3 className="font-syne text-lg font-bold text-black-text">Labelling Strategy Templates</h3>
+          <span className="text-xs text-gray-400 ml-1">— pick one to pre-fill the rules below</span>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          {/* Disease Severity */}
+          <div className="relative group">
+            <button
+              onClick={() => loadPreset('severity_sledai')}
+              className="w-full p-5 rounded-xl border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50 transition-all text-left"
+            >
+              <div className="w-11 h-11 rounded-xl bg-purple-100 flex items-center justify-center mb-3">
+                <Target className="w-6 h-6 text-purple-600" />
+              </div>
+              <div className="font-semibold text-sm text-gray-900">SLEDAI Severity Grading</div>
+              <div className="text-xs text-gray-500 mt-1">Labels: Mild · Moderate · Severe</div>
+            </button>
+            {/* Tooltip */}
+            <div className="absolute left-0 bottom-full mb-2 w-72 p-3.5 bg-gray-900 text-white text-xs rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+              <p className="font-semibold text-purple-300 mb-1">Disease Severity</p>
+              <p className="leading-relaxed text-gray-200">Classifies how <strong className="text-white">serious</strong> the patient's disease is right now based on SLEDAI score. Used when you want the model to predict the overall burden of disease — helpful for triaging treatment intensity.</p>
+              <p className="mt-2 text-gray-400">SLEDAI &lt;4 = Mild · 4-12 = Moderate · &gt;12 = Severe</p>
+              <div className="absolute left-5 top-full w-2.5 h-2.5 bg-gray-900 rotate-45 -mt-1.5"></div>
             </div>
-            <div className="font-semibold text-sm text-gray-900">Disease Severity</div>
-            <div className="text-xs text-gray-600 mt-1">SLEDAI-based (Mild/Moderate/Severe)</div>
-          </button>
-          <button
-            onClick={() => loadPreset('activity_status')}
-            className="p-4 rounded-xl border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
-          >
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center mb-2">
-              <BarChart3 className="w-6 h-6 text-blue-600" />
+          </div>
+
+          {/* Disease Activity */}
+          <div className="relative group">
+            <button
+              onClick={() => loadPreset('activity_status')}
+              className="w-full p-5 rounded-xl border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
+            >
+              <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center mb-3">
+                <Activity className="w-6 h-6 text-blue-600" />
+              </div>
+              <div className="font-semibold text-sm text-gray-900">Disease Activity Status</div>
+              <div className="text-xs text-gray-500 mt-1">Labels: Remission · Active · Flare</div>
+            </button>
+            <div className="absolute left-0 bottom-full mb-2 w-72 p-3.5 bg-gray-900 text-white text-xs rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+              <p className="font-semibold text-blue-300 mb-1">Disease Activity</p>
+              <p className="leading-relaxed text-gray-200">Tracks <strong className="text-white">whether the disease is currently active</strong>. Remission means the disease is controlled; a Flare means a sudden worsening. This is used to predict whether a patient is about to flare or remains stable.</p>
+              <p className="mt-2 text-gray-400">SLEDAI 0 = Remission · 1-10 = Active · &gt;10 = Flare</p>
+              <div className="absolute left-5 top-full w-2.5 h-2.5 bg-gray-900 rotate-45 -mt-1.5"></div>
             </div>
-            <div className="font-semibold text-sm text-gray-900">Disease Activity</div>
-            <div className="text-xs text-gray-600 mt-1">Remission/Active/Flare status</div>
-          </button>
-          <button
-            onClick={() => loadPreset('crp_inflammation')}
-            className="p-4 rounded-xl border-2 border-amber-200 hover:border-amber-400 hover:bg-amber-50 transition-all text-left"
-          >
-            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center mb-2">
-              <Sparkles className="w-6 h-6 text-amber-600" />
+          </div>
+
+          {/* Inflammation Level */}
+          <div className="relative group">
+            <button
+              onClick={() => loadPreset('crp_inflammation')}
+              className="w-full p-5 rounded-xl border-2 border-amber-200 hover:border-amber-400 hover:bg-amber-50 transition-all text-left"
+            >
+              <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center mb-3">
+                <FlaskConical className="w-6 h-6 text-amber-600" />
+              </div>
+              <div className="font-semibold text-sm text-gray-900">Inflammation Level (CRP)</div>
+              <div className="text-xs text-gray-500 mt-1">Labels: Normal · Elevated · High</div>
+            </button>
+            <div className="absolute left-0 bottom-full mb-2 w-72 p-3.5 bg-gray-900 text-white text-xs rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+              <p className="font-semibold text-amber-300 mb-1">Inflammation Level</p>
+              <p className="leading-relaxed text-gray-200">Measures <strong className="text-white">how much systemic inflammation</strong> is present using CRP (C-Reactive Protein), a key biomarker. Useful when your dataset focuses on lab-marker driven prediction rather than clinical scores.</p>
+              <p className="mt-2 text-gray-400">CRP ≤10 = Normal · 10-50 = Elevated · &gt;50 = High</p>
+              <div className="absolute left-5 top-full w-2.5 h-2.5 bg-gray-900 rotate-45 -mt-1.5"></div>
             </div>
-            <div className="font-semibold text-sm text-gray-900">Inflammation Level</div>
-            <div className="text-xs text-gray-600 mt-1">CRP-based classification</div>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -369,24 +442,53 @@ export default function RuleBasedLabelingWorkflow({ batchId, targetColumn: propT
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Source Column <span className="text-red-500">*</span>
+              <span className="ml-1.5 text-xs text-gray-400 font-normal">— which data column drives the labels?</span>
             </label>
-            <select
-              value={sourceColumn}
-              onChange={(e) => setSourceColumn(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              disabled={fetchingColumns}
-            >
-              {fetchingColumns ? (
-                <option>Loading columns...</option>
-              ) : availableColumns.length === 0 ? (
-                <option>No columns available</option>
-              ) : (
-                availableColumns.map(col => (
-                  <option key={col} value={col}>{col}</option>
-                ))
+            {/* Searchable combobox */}
+            <div ref={colRef} className="relative">
+              <div
+                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-gray-300 bg-white cursor-text focus-within:ring-2 focus-within:ring-purple-500 focus-within:border-transparent"
+                onClick={() => setShowColDropdown(true)}
+              >
+                <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  value={showColDropdown ? colSearch : displayColName(sourceColumn)}
+                  onChange={(e) => { setColSearch(e.target.value); setShowColDropdown(true); }}
+                  onFocus={() => { setColSearch(''); setShowColDropdown(true); }}
+                  placeholder={fetchingColumns ? 'Loading…' : 'Type to search column…'}
+                  className="flex-1 outline-none text-sm bg-transparent"
+                  disabled={fetchingColumns}
+                />
+                <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              </div>
+              {showColDropdown && filteredColumns.length > 0 && (
+                <div className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl">
+                  {filteredColumns.map(col => (
+                    <button
+                      key={col}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => { setSourceColumn(col); setColSearch(''); setShowColDropdown(false); }}
+                      className={`w-full px-4 py-2.5 text-left text-sm hover:bg-purple-50 transition-colors flex items-center justify-between ${
+                        sourceColumn === col ? 'bg-purple-50 text-purple-700 font-semibold' : 'text-gray-700'
+                      }`}
+                    >
+                      <span>{displayColName(col)}</span>
+                      {col.includes('.') && !col.startsWith('other.') && (
+                        <span className="text-[10px] text-gray-400 ml-2">{col.split('.')[0]}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               )}
-            </select>
-            <p className="text-xs text-gray-500 mt-1.5">Column to evaluate for rules</p>
+              {showColDropdown && filteredColumns.length === 0 && !fetchingColumns && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl px-4 py-3 text-sm text-gray-400">
+                  No matching columns
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-1.5">Column whose values will be evaluated against the rules below</p>
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
