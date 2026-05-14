@@ -148,14 +148,24 @@ export default function DashboardLayout({ children }) {
               className={sidebarExpanded ? "w-10 h-10" : "w-12 h-12"}
               style={{ 
                 display: 'block', 
-                objectFit: 'contain'
+                objectFit: 'contain',
+                backgroundColor: 'transparent'
               }}
+              onLoad={() => console.log('[Logo] Successfully loaded')}
               onError={(e) => {
-                console.error('Logo failed to load from:', e.target.src);
-                const fallback = document.createElement('div');
-                fallback.style.cssText = 'width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:bold;background:linear-gradient(135deg,#A855F7,#7C3AED);border-radius:8px;';
-                fallback.textContent = 'M';
-                e.target.parentNode.replaceChild(fallback, e.target);
+                console.error('[Logo] Failed to load from:', e.target.src);
+                console.error('[Logo] Trying absolute path...');
+                // Try absolute path first
+                if (!e.target.src.includes('http')) {
+                  e.target.src = window.location.origin + '/Logo/MyAria-I Logo.png';
+                } else if (!e.target.dataset.fallbackAttempted) {
+                  // If absolute path also failed, show fallback
+                  e.target.dataset.fallbackAttempted = 'true';
+                  const fallback = document.createElement('div');
+                  fallback.style.cssText = 'width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:bold;background:linear-gradient(135deg,#A855F7,#7C3AED);border-radius:8px;';
+                  fallback.textContent = 'M';
+                  e.target.parentNode.replaceChild(fallback, e.target);
+                }
               }}
             />
             

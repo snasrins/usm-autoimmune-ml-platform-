@@ -211,17 +211,37 @@ export default function DataCleaningPage() {
       // Store before stats
       setBeforeStats(qualityMetrics);
       
+      // Helper function to retry failed operations
+      const retryOperation = async (operation, maxRetries = 2) => {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            return await operation();
+          } catch (err) {
+            console.warn(`Attempt ${attempt}/${maxRetries} failed:`, err.message);
+            if (attempt === maxRetries) throw err;
+            // Wait 1 second before retry
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      };
+      
       // Step 1: Handle missing values (median for numeric, mode for categorical)
-      await preprocessingAPI.handleMissingValues(sessionId, {
-        method: 'median',
-        threshold: 0.9 // Drop columns with >90% missing
-      });
+      await retryOperation(() => 
+        preprocessingAPI.handleMissingValues(sessionId, {
+          method: 'median',
+          threshold: 0.9 // Drop columns with >90% missing
+        })
+      );
       
       // Step 2: Remove duplicates (keep first occurrence)
-      await preprocessingAPI.removeDuplicates(sessionId, true);
+      await retryOperation(() => 
+        preprocessingAPI.removeDuplicates(sessionId, true)
+      );
       
       // Step 3: Cap outliers (mild IQR threshold)
-      await preprocessingAPI.handleOutliers(sessionId, 'iqr', 1.5);
+      await retryOperation(() => 
+        preprocessingAPI.handleOutliers(sessionId, 'iqr', 1.5)
+      );
       
       // Reload quality report to see changes
       await loadQualityReport();
@@ -246,7 +266,8 @@ export default function DataCleaningPage() {
       
     } catch (err) {
       console.error('Auto-clean failed:', err);
-      setError('Auto-clean failed: ' + (err.response?.data?.detail || err.message));
+      const errorDetail = err.response?.data?.detail || err.message;
+      setError('Auto-clean failed: ' + (typeof errorDetail === 'string' ? errorDetail : JSON.stringify(errorDetail)));
     } finally {
       setLoading(false);
       setOperationInProgress(null);

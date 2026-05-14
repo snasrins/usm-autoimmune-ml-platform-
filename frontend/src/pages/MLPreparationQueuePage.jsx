@@ -27,6 +27,7 @@ export default function MLPreparationQueuePage() {
     const loadUser = async () => {
       try {
         const userData = await authAPI.getCurrentUser();
+        console.log('[ML Queue] Current user:', userData);
         setUser(userData);
       } catch (error) {
         console.error('Failed to load user:', error);
@@ -48,6 +49,8 @@ export default function MLPreparationQueuePage() {
     setLoading(true);
     try {
       const response = await flexibleAPI.getRecentUploads(100, true, true);
+      console.log('[ML Queue] Datasets loaded:', response.uploads?.length, 'datasets');
+      console.log('[ML Queue] Sample dataset:', response.uploads?.[0]);
       setDatasets(response.uploads || []);
     } catch (error) {
       console.error('Failed to fetch datasets:', error);
@@ -105,11 +108,23 @@ export default function MLPreparationQueuePage() {
   const handleTrain = (datasetId) => navigate('/training', { state: { datasetId } });
   
   const handleView = (datasetId, status) => {
+    // Find the dataset to pass full info
+    const dataset = datasets.find(d => d.id === datasetId);
+    
     // Navigate to data-preparation page with proper state
     navigate('/data-preparation', { 
       state: { 
-        sessionId: datasetId,
-        viewMode: true // Read-only mode for other users' data
+        fromDataCatalog: true,
+        preselectedBatch: {
+          id: dataset?.id || datasetId,
+          name: dataset?.file_name || 'Dataset',
+          uploadedAt: dataset?.uploaded_at || new Date().toISOString(),
+          totalRecords: dataset?.row_count || 0,
+          labeledRecords: 0,
+          features: dataset?.column_count || 0,
+          status: dataset?.status || 'unknown',
+          owner: dataset?.uploaded_by || 'Unknown'
+        }
       } 
     });
   };
@@ -324,21 +339,21 @@ export default function MLPreparationQueuePage() {
                             </button>
                             
                             {/* ML Prep Button - only for own datasets */}
-                            {(user?.id === dataset.user_id || user?.id === dataset.uploaded_by_id) && (
+                            {(user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by)) && (
                               <button onClick={() => handleMLPrep(dataset)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Start ML Preparation">
                                 <Play size={16} className="fill-blue-600" />
                               </button>
                             )}
                             
                             {/* Train Button - only for ready datasets + own datasets */}
-                            {(dataset.status === 'saved' || dataset.ml_prep_status === 'ready') && (user?.id === dataset.user_id || user?.id === dataset.uploaded_by_id) && (
+                            {(dataset.status === 'saved' || dataset.ml_prep_status === 'ready') && (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by)) && (
                               <button onClick={() => handleTrain(dataset.id)} className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Start ML Training">
                                 <Play size={16} />
                               </button>
                             )}
                             
                             {/* Delete Button - only for own datasets */}
-                            {(user?.id === dataset.user_id || user?.id === dataset.uploaded_by_id) && (
+                            {(user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by)) && (
                               <button onClick={() => handleDelete(dataset.id)} className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Dataset">
                                 <Trash2 size={16} />
                               </button>

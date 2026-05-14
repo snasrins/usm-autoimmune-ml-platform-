@@ -474,26 +474,41 @@ const [sessionId, setSessionId] = useState(null);
     const stagingId = row.staging_id;
     
     try {
+      // Convert value to appropriate type
+      let cellValue = editingCell.value;
+      
+      // Try to parse as number if it looks numeric
+      if (cellValue !== null && cellValue !== '' && !isNaN(cellValue)) {
+        cellValue = Number(cellValue);
+      }
+      
+      console.log('[Cell Edit] Saving:', { sessionId, stagingId, column: editingCell.columnName, value: cellValue, type: typeof cellValue });
+      
       await flexibleAPI.editCell(
         sessionId,
         stagingId,
         editingCell.columnName,
-        editingCell.value
+        cellValue
       );
       
       // Update local state
       const updatedRows = [...previewData.rows];
-      updatedRows[editingCell.rowIndex].data[editingCell.columnName] = editingCell.value;
+      updatedRows[editingCell.rowIndex].data[editingCell.columnName] = cellValue;
       updatedRows[editingCell.rowIndex].is_edited = true;
       setPreviewData({ ...previewData, rows: updatedRows });
       
       setEditingCell(null);
     } catch (err) {
       console.error('Failed to update cell:', err);
-      setError(err.response?.data?.detail || 'Failed to update cell');
+      const errorMsg = err.response?.data?.detail || 'Failed to update cell';
+      setError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
       setEditingCell(null);
       // Reload preview to ensure data consistency
-      await loadPreview(sessionId, currentPage);
+      try {
+        await loadPreview(sessionId, currentPage);
+      } catch (loadErr) {
+        console.error('Failed to reload preview:', loadErr);
+      }
     }
   };
 
