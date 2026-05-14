@@ -125,7 +125,7 @@ export default function DashboardLayout({ children }) {
         />
 
         {/* Brand with Toggle */}
-        <div className="h-16 flex items-center justify-center gap-2.5 px-3 border-b border-white/[0.06] relative z-10" style={{ paddingTop: '8px' }}>
+        <div className="h-16 flex items-center justify-center border-b border-white/[0.06] relative z-10" style={{ paddingTop: '8px', paddingLeft: sidebarExpanded ? '12px' : '0', paddingRight: sidebarExpanded ? '12px' : '0', gap: sidebarExpanded ? '10px' : '0' }}>
           <div
             onClick={(e) => {
               e.stopPropagation();
@@ -133,15 +133,25 @@ export default function DashboardLayout({ children }) {
             }}
             className="group/toggle flex-shrink-0 relative transition-all cursor-pointer"
             title={sidebarExpanded ? 'Close sidebar' : 'Open sidebar'}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              width: sidebarExpanded ? 'auto' : '100%',
+              height: '48px'
+            }}
           >
             <img 
               src="/Logo/MyAria-I Logo.png" 
               alt="MyAria-i Logo" 
-              className="w-10 h-10 object-contain"
-              style={{ display: 'block', minWidth: '40px', minHeight: '40px' }}
+              className={sidebarExpanded ? "w-10 h-10" : "w-12 h-12"}
+              style={{ 
+                display: 'block', 
+                objectFit: 'contain'
+              }}
               onError={(e) => {
-                console.error('Logo failed to load:', e.target.src);
+                console.error('Logo failed to load from:', e.target.src);
+                // Fallback: show first letter
                 e.target.style.display = 'none';
               }}
             />
