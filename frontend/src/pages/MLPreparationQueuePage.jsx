@@ -60,17 +60,32 @@ export default function MLPreparationQueuePage() {
     }
   };
   
+  // A dataset is ML-prepped if it has gone through the ML preparation workflow
+  const isMLPrepped = (d) =>
+    d.status === 'saved' ||
+    d.ml_prep_status === 'ready' ||
+    d.ml_prep_status === 'completed';
+
+  const isProcessing = (d) =>
+    d.status === 'processing' ||
+    d.ml_prep_status === 'processing';
+
   const filteredDatasets = datasets.filter(dataset => {
     const matchesSearch = dataset.file_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          dataset.uploaded_by?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || dataset.status === statusFilter;
+    let matchesStatus = false;
+    if (statusFilter === 'all')        matchesStatus = true;
+    else if (statusFilter === 'ml-ready')     matchesStatus = isMLPrepped(dataset);
+    else if (statusFilter === 'needs-prep')   matchesStatus = !isMLPrepped(dataset) && !isProcessing(dataset);
+    else if (statusFilter === 'processing')   matchesStatus = isProcessing(dataset);
     return matchesSearch && matchesStatus;
   });
   
   const stats = {
     total: datasets.length,
-    ready: datasets.filter(d => d.status === 'saved' || d.ml_prep_status === 'ready').length,
-    preview: datasets.filter(d => d.status === 'preview').length,
+    mlReady: datasets.filter(isMLPrepped).length,
+    needsPrep: datasets.filter(d => !isMLPrepped(d) && !isProcessing(d)).length,
+    processing: datasets.filter(isProcessing).length,
     totalRecords: datasets.reduce((sum, d) => sum + (d.row_count || 0), 0)
   };
   
@@ -121,11 +136,11 @@ export default function MLPreparationQueuePage() {
   };
   
   const getStatusBadge = (dataset) => {
-    if (dataset.status === 'preview') 
-      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">Preview</span>;
-    if (dataset.status === 'saved' || dataset.ml_prep_status === 'ready')
-      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">Ready</span>;
-    return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">Unknown</span>;
+    if (isMLPrepped(dataset))
+      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">ML-Ready</span>;
+    if (isProcessing(dataset))
+      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 border border-blue-200">Processing</span>;
+    return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-700 border border-amber-200">Needs Preparation</span>;
   };
   
   const formatDate = (dateString) => {
@@ -175,26 +190,26 @@ export default function MLPreparationQueuePage() {
                   <CheckCircle className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-right">
-                  <div className="text-3xl font-bold text-gray-900">{stats.ready}</div>
-                  <div className="text-xs text-green-600 font-medium mt-1">↑ 7%</div>
+                  <div className="text-3xl font-bold text-gray-900">{stats.mlReady}</div>
+                  <div className="text-xs text-green-600 font-medium mt-1">Prepared</div>
                 </div>
               </div>
-              <div className="text-sm font-semibold text-gray-700">Ready for ML</div>
-              <div className="text-xs text-gray-500 mt-0.5">vs last month</div>
+              <div className="text-sm font-semibold text-gray-700">ML-Ready</div>
+              <div className="text-xs text-gray-500 mt-0.5">Completed ML prep</div>
             </div>
             
             <div className="bg-white rounded-2xl p-6 border border-gray-200/60 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all">
               <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-md">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-md">
                   <Clock className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-right">
-                  <div className="text-3xl font-bold text-gray-900">{stats.preview}</div>
-                  <div className="text-xs text-green-600 font-medium mt-1">↑ 5%</div>
+                  <div className="text-3xl font-bold text-gray-900">{stats.needsPrep}</div>
+                  <div className="text-xs text-amber-600 font-medium mt-1">Unprepared</div>
                 </div>
               </div>
-              <div className="text-sm font-semibold text-gray-700">In Processing</div>
-              <div className="text-xs text-gray-500 mt-0.5">vs last month</div>
+              <div className="text-sm font-semibold text-gray-700">Needs Preparation</div>
+              <div className="text-xs text-gray-500 mt-0.5">Awaiting ML prep</div>
             </div>
             
             <div className="bg-white rounded-2xl p-6 border border-gray-200/60 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all">
@@ -245,11 +260,14 @@ export default function MLPreparationQueuePage() {
                   <button onClick={() => setStatusFilter('all')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'all' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-600'}`}>
                     All ({stats.total})
                   </button>
-                  <button onClick={() => setStatusFilter('saved')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'saved' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-600'}`}>
-                    Ready ({stats.ready})
+                  <button onClick={() => setStatusFilter('ml-ready')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'ml-ready' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-600'}`}>
+                    ML-Ready ({stats.mlReady})
                   </button>
-                  <button onClick={() => setStatusFilter('preview')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'preview' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-600'}`}>
-                    Processing ({stats.preview})
+                  <button onClick={() => setStatusFilter('needs-prep')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'needs-prep' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-600'}`}>
+                    Needs Preparation ({stats.needsPrep})
+                  </button>
+                  <button onClick={() => setStatusFilter('processing')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'processing' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600'}`}>
+                    Processing ({stats.processing})
                   </button>
                 </div>
                 
@@ -336,8 +354,8 @@ export default function MLPreparationQueuePage() {
                               </button>
                             )}
                             
-                            {/* Train Button - only for ready datasets + own datasets */}
-                            {(dataset.status === 'saved' || dataset.ml_prep_status === 'ready') && (dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
+                            {/* Train Button - only for ML-prepped datasets + own datasets */}
+                            {isMLPrepped(dataset) && (dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
                               <button onClick={() => handleTrain(dataset.id)} className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Start ML Training">
                                 <Play size={16} />
                               </button>
