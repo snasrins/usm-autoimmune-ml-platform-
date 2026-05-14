@@ -68,6 +68,14 @@ export default function DatasetEDAPage() {
       // Load preview data (first 100 rows)
       const preview = await flexibleAPI.getPreview(datasetId, 1, 100);
       console.log('[EDA] Preview data:', preview);
+      console.log('[EDA] Preview keys:', Object.keys(preview));
+      console.log('[EDA] Preview.rows:', preview.rows);
+      console.log('[EDA] Preview.rows length:', preview.rows?.length);
+      if (preview.rows && preview.rows.length > 0) {
+        console.log('[EDA] First row:', preview.rows[0]);
+        console.log('[EDA] First row.data:', preview.rows[0]?.data);
+        console.log('[EDA] First row.data keys:', preview.rows[0]?.data ? Object.keys(preview.rows[0].data) : 'none');
+      }
       
       // Normalize preview structure
       const normalizedPreview = {
@@ -77,6 +85,10 @@ export default function DatasetEDAPage() {
           : []),
         total_rows: preview.total_rows || preview.rows?.length || 0
       };
+      
+      console.log('[EDA] Normalized preview:', normalizedPreview);
+      console.log('[EDA] Normalized rows length:', normalizedPreview.rows.length);
+      console.log('[EDA] Normalized columns:', normalizedPreview.columns);
       
       setPreviewData(normalizedPreview);
       
