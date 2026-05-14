@@ -170,7 +170,6 @@ export default function DashboardPage() {
       // FETCH MODEL PERFORMANCE DATA
       // ========================================
       try {
-      try {
         // Get latest completed training jobs for performance metrics (user-filtered)
         const completedJobs = userJobs.filter(job => 
           job.status === 'completed' && job.oof_auc
