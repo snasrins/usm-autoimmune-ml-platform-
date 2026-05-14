@@ -111,20 +111,11 @@ export default function MLPreparationQueuePage() {
     // Find the dataset to pass full info
     const dataset = datasets.find(d => d.id === datasetId);
     
-    // Navigate to data-preparation page with proper state
-    navigate('/data-preparation', { 
+    // Navigate to EDA page for comprehensive data exploration
+    navigate('/dataset-eda', { 
       state: { 
-        fromDataCatalog: true,
-        preselectedBatch: {
-          id: dataset?.id || datasetId,
-          name: dataset?.file_name || 'Dataset',
-          uploadedAt: dataset?.uploaded_at || new Date().toISOString(),
-          totalRecords: dataset?.row_count || 0,
-          labeledRecords: 0,
-          features: dataset?.column_count || 0,
-          status: dataset?.status || 'unknown',
-          owner: dataset?.uploaded_by || 'Unknown'
-        }
+        datasetId: dataset?.id || datasetId,
+        datasetName: dataset?.file_name || 'Dataset'
       } 
     });
   };

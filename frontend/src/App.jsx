@@ -11,6 +11,7 @@ import DataPreparationPage from './pages/DataPreparationPage';
 import DataCleaningPage from './pages/DataCleaningPage';
 import DataCatalogPage from './pages/DataCatalogPage';
 import MLPreparationQueuePage from './pages/MLPreparationQueuePage';
+import DatasetEDAPage from './pages/DatasetEDAPage';
 import DataQualityDetailPage from './pages/DataQualityDetailPage';
 import DataQualityDashboardPage from './pages/DataQualityDashboardPage';
 import TrainingJobsPage from './pages/TrainingJobsPage';
@@ -109,6 +110,14 @@ function App() {
           element={
             <ProtectedRoute>
               <MLPreparationQueuePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dataset-eda"
+          element={
+            <ProtectedRoute>
+              <DatasetEDAPage />
             </ProtectedRoute>
           }
         />
