@@ -98,14 +98,32 @@ export default function DashboardPage() {
       // Process uploads data (filter by user unless superuser)
       const uploadsData = dashboardData.uploads;
       console.log('[Dashboard] Total uploads:', uploadsData.uploads?.length);
-      console.log('[Dashboard] Sample upload:', uploadsData.uploads?.[0]);
+      console.log('[Dashboard] Sample upload FULL:', JSON.stringify(uploadsData.uploads?.[0], null, 2));
       
       const userUploads = isSuperuser ? uploadsData.uploads : (uploadsData.uploads || []).filter(u => {
-        const match = String(u.user_id) === String(currentUserId) || 
-                     String(u.uploaded_by_id) === String(currentUserId) || 
-                     u.uploaded_by === currentUsername;
-        if (!match && uploadsData.uploads.length < 5) {
-          console.log('[Dashboard] Upload filtered out:', { upload: u, reason: 'no user match' });
+        // Check multiple possible ID and username fields with flexible matching
+        const userIdMatch = String(u.user_id) === String(currentUserId) || 
+                           String(u.uploaded_by_id) === String(currentUserId);
+        
+        // Flexible username matching - case insensitive and partial
+        const uploadedByLower = (u.uploaded_by || '').toLowerCase();
+        const currentUserLower = (currentUsername || '').toLowerCase();
+        const usernameMatch = uploadedByLower === currentUserLower || 
+                             uploadedByLower.includes(currentUserLower) ||
+                             currentUserLower.includes(uploadedByLower);
+        
+        const match = userIdMatch || usernameMatch;
+        
+        if (!match) {
+          console.log('[Dashboard] Upload filtered out:', { 
+            uploadId: u.id,
+            uploadedBy: u.uploaded_by, 
+            userId: u.user_id,
+            uploadedById: u.uploaded_by_id,
+            currentUsername,
+            currentUserId,
+            reason: 'no match'
+          });
         }
         return match;
       });
