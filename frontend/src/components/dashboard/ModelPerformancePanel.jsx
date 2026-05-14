@@ -5,16 +5,22 @@ import { motion } from 'framer-motion';
 export function ModelPerformancePanel({ performance, className = '' }) {
   const { accuracy, rocAuc, precision, f1Score, runs } = performance;
   
-  // ENTERPRISE-GRADE DATA with confidence bands, anomaly detection, and clinical thresholds
-  const performanceTrend = [
-    { epoch: 1, accuracy: 76.5, f1: 74.2, precision: 78.1, confidence: 72.0, confidenceUpper: 81.0, benchmark: 75.0, isAnomaly: false },
-    { epoch: 5, accuracy: 80.2, f1: 78.9, precision: 81.5, confidence: 76.5, confidenceUpper: 83.9, benchmark: 75.0, isAnomaly: false },
-    { epoch: 10, accuracy: 82.8, f1: 81.3, precision: 83.9, confidence: 79.8, confidenceUpper: 85.8, benchmark: 75.0, isAnomaly: false },
-    { epoch: 12, accuracy: 79.5, f1: 78.0, precision: 80.2, confidence: 76.0, confidenceUpper: 83.0, benchmark: 75.0, isAnomaly: true }, // ANOMALY
-    { epoch: 15, accuracy: 85.1, f1: 84.0, precision: 86.2, confidence: 82.5, confidenceUpper: 87.6, benchmark: 75.0, isAnomaly: false },
-    { epoch: 20, accuracy: 86.5, f1: 85.8, precision: 87.4, confidence: 84.2, confidenceUpper: 88.8, benchmark: 75.0, isAnomaly: false },
-    { epoch: 25, accuracy: 87.2, f1: 86.9, precision: 88.1, confidence: 85.3, confidenceUpper: 89.1, benchmark: 75.0, isAnomaly: false }
-  ];
+  // Use real training runs data for the chart
+  const performanceTrend = runs && runs.length > 0 
+    ? runs.map((run, idx) => ({
+        epoch: idx + 1,
+        accuracy: parseFloat(run.accuracy) || 0,
+        f1: f1Score || 0,
+        precision: precision || 0,
+        confidence: (parseFloat(run.accuracy) || 0) - 5,
+        confidenceUpper: (parseFloat(run.accuracy) || 0) + 5,
+        benchmark: 75.0,
+        isAnomaly: false
+      }))
+    : [
+        // Fallback to single point if no runs
+        { epoch: 1, accuracy: accuracy || 0, f1: f1Score || 0, precision: precision || 0, confidence: (accuracy || 0) - 5, confidenceUpper: (accuracy || 0) + 5, benchmark: 75.0, isAnomaly: false }
+      ];
   
   // Clinical thresholds
   const CLINICAL_THRESHOLD_ACCEPTABLE = 80.0;

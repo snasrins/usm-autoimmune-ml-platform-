@@ -103,7 +103,7 @@ export default function DashboardLayout({ children }) {
       <aside
         className="fixed left-0 top-0 h-screen flex flex-col transition-all duration-300 ease-out overflow-hidden"
         style={{ 
-          width: sidebarExpanded ? '200px' : '45px', 
+          width: sidebarExpanded ? '200px' : '64px', 
           zIndex: 9999,
           fontSize: '80%',
           background: 'linear-gradient(180deg, #0A0118 0%, #120325 45%, #1A0633 100%)',
@@ -320,7 +320,7 @@ export default function DashboardLayout({ children }) {
       {/* Main content */}
       <div 
         className="flex-1 flex flex-col transition-all duration-300 ease-out" 
-        style={{ marginLeft: sidebarExpanded ? '200px' : '45px' }}
+        style={{ marginLeft: sidebarExpanded ? '200px' : '64px' }}
       >
         {/* Global Training Status Bar (appears on all pages when training is active) */}
         <TrainingStatusBar />

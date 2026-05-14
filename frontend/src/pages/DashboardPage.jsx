@@ -87,6 +87,10 @@ export default function DashboardPage() {
         includeAdminStats: Boolean(userData?.is_superuser)
       });
       
+      // Filter data by current user (unless superuser)
+      const currentUserId = userData?.id;
+      const isSuperuser = userData?.is_superuser;
+      
       // Process uploads data
       const uploadsData = dashboardData.uploads;
       const totalDatasets = uploadsData.total || 0;
@@ -105,13 +109,15 @@ export default function DashboardPage() {
       const totalUsers = platformData.users?.total || 0;
       const totalPatients = platformData.patients?.total || 0;
       
-      // Process ML models data
+      // Process ML models data (filter by user unless superuser)
       const modelsData = dashboardData.models;
-      const totalModels = modelsData.total_count || 0;
+      const userModels = isSuperuser ? modelsData.models : (modelsData.models || []).filter(m => m.user_id === currentUserId);
+      const totalModels = userModels.length;
       
-      // Process training data
+      // Process training data (filter by user unless superuser)
       const trainingData = dashboardData.training;
-      const runningJobs = trainingData.jobs?.filter(job => 
+      const userJobs = isSuperuser ? trainingData.jobs : (trainingData.jobs || []).filter(j => j.user_id === currentUserId);
+      const runningJobs = userJobs.filter(job => 
         job.status === 'running' || job.status === 'queued'
       ).length || 0;
       
@@ -164,8 +170,9 @@ export default function DashboardPage() {
       // FETCH MODEL PERFORMANCE DATA
       // ========================================
       try {
-        // Get latest completed training jobs for performance metrics
-        const completedJobs = trainingData.jobs?.filter(job => 
+      try {
+        // Get latest completed training jobs for performance metrics (user-filtered)
+        const completedJobs = userJobs.filter(job => 
           job.status === 'completed' && job.oof_auc
         ) || [];
         
@@ -179,10 +186,10 @@ export default function DashboardPage() {
           const latestMetrics = latestJob.metrics || {};
           
           setModelPerformance({
-            accuracy: (latestMetrics.accuracy || latestJob.oof_auc || 0) * 100,
+            accuracy: parseFloat(((latestMetrics.accuracy || latestJob.oof_auc || 0) * 100).toFixed(2)),
             rocAuc: latestJob.oof_auc || 0,
-            precision: (latestMetrics.precision || 0) * 100,
-            f1Score: (latestMetrics.f1_score || 0) * 100,
+            precision: parseFloat(((latestMetrics.precision || 0) * 100).toFixed(2)),
+            f1Score: parseFloat(((latestMetrics.f1_score || 0) * 100).toFixed(2)),
             runs: completedJobs.slice(0, 3).map((job, idx) => ({
               id: `#${job.id || idx + 101}`,
               model: job.model_name || job.job_type?.replace('_', ' ') || 'Model',
@@ -231,7 +238,7 @@ export default function DashboardPage() {
       try {
         const totalRecordCount = totalRecords || 0;
         const missingCount = unlabeledCount || 0;
-        const missingPct = totalRecordCount > 0 ? (missingCount / totalRecordCount) * 100 : 0;
+        const missingPct = totalRecordCount > 0 && missingCount > 0 ? (missingCount / totalRecordCount) * 100 : 0;
         
         // Calculate data quality issues count (missing + estimated outliers)
         const estimatedOutliers = Math.floor(totalRecordCount * 0.05); // Estimate 5% outliers

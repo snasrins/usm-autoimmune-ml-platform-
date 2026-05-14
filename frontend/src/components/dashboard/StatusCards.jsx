@@ -39,7 +39,7 @@ export function DataQualityCard({ issues, missingPercent }) {
       
       <div className="mb-2">
         <div className="text-5xl font-bold text-[#0A0118] mb-2 leading-none">{issues}</div>
-        <div className="text-sm text-[#4a5568]">{missingPercent.toFixed(1)}% missing values</div>
+        <div className="text-sm text-[#4a5568]">{missingPercent === 0 ? '0%' : `${missingPercent.toFixed(1)}%`} missing values</div>
       </div>
     </div>
   );
