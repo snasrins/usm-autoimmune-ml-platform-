@@ -138,21 +138,22 @@ export default function DashboardLayout({ children }) {
               alignItems: 'center', 
               justifyContent: 'center',
               width: sidebarExpanded ? 'auto' : '100%',
-              height: '48px'
+              height: '48px',
+              position: 'relative'
             }}
           >
             <img 
               src="/Logo/MyAria-I Logo.png" 
-              alt="MyAria-i Logo" 
+              alt="M" 
               className={sidebarExpanded ? "w-10 h-10" : "w-12 h-12"}
               style={{ 
                 display: 'block', 
-                objectFit: 'contain'
+                objectFit: 'contain',
+                filter: 'brightness(0) invert(1)'
               }}
               onError={(e) => {
                 console.error('Logo failed to load from:', e.target.src);
-                // Fallback: show first letter
-                e.target.style.display = 'none';
+                e.target.outerHTML = '<div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:bold;background:linear-gradient(135deg,#A855F7,#7C3AED);border-radius:8px;">M</div>';
               }}
             />
             

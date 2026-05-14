@@ -91,10 +91,11 @@ export default function DashboardPage() {
       const currentUserId = userData?.id;
       const isSuperuser = userData?.is_superuser;
       
-      // Process uploads data
+      // Process uploads data (filter by user unless superuser)
       const uploadsData = dashboardData.uploads;
-      const totalDatasets = uploadsData.total || 0;
-      const totalRecordsFromUploads = uploadsData.uploads?.reduce((sum, upload) => {
+      const userUploads = isSuperuser ? uploadsData.uploads : (uploadsData.uploads || []).filter(u => u.user_id === currentUserId || u.uploaded_by_id === currentUserId);
+      const totalDatasets = userUploads.length;
+      const totalRecordsFromUploads = userUploads.reduce((sum, upload) => {
         return sum + (upload.row_count || 0);
       }, 0) || 0;
       
@@ -205,9 +206,9 @@ export default function DashboardPage() {
       // FETCH FEATURE IMPORTANCE
       // ========================================
       try {
-        // Get latest model for feature importance
-        if (modelsData.models && modelsData.models.length > 0) {
-          const latestModel = modelsData.models[0];
+        // Get latest model for feature importance (use filtered userModels)
+        if (userModels && userModels.length > 0) {
+          const latestModel = userModels[0];
           const importanceData = await explainabilityAPI.getGlobalFeatureImportance(latestModel.id);
           
           if (importanceData.feature_importance) {
@@ -302,12 +303,12 @@ export default function DashboardPage() {
       }
       
       // ========================================
-      // UNIFIED ACTIVITY FEED - ALL USERS
+      // UNIFIED ACTIVITY FEED - USER-SPECIFIC
       // ========================================
       const allActivities = [];
       
-      // 1. Upload activities
-      uploadsData.uploads?.forEach(upload => {
+      // 1. Upload activities (use filtered userUploads)
+      userUploads.forEach(upload => {
         const fileName = upload.file_name || upload.dataset_name || 'Unnamed dataset';
         const rowCount = upload.row_count || 0;
         
@@ -320,8 +321,8 @@ export default function DashboardPage() {
         });
       });
       
-      // 2. Training job activities
-      trainingData.jobs?.forEach(job => {
+      // 2. Training job activities (use filtered userJobs)
+      userJobs.forEach(job => {
         const userName = job.user_full_name || job.username || 'Unknown User';
         const modelName = job.model_name || job.job_type?.replace('_', ' ');
         
@@ -352,8 +353,8 @@ export default function DashboardPage() {
         }
       });
       
-      // 3. Model deployment activities (from models list)
-      modelsData.models?.forEach(model => {
+      // 3. Model deployment activities (use filtered userModels)
+      userModels.forEach(model => {
         if (model.trained_at) {
           allActivities.push({
             timestamp: new Date(model.trained_at),
