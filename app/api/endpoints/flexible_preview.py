@@ -856,28 +856,47 @@ async def get_saved_dataset_preview(
         FlexibleDatasetWide.import_batch_id == batch_uuid
     ).order_by(FlexibleDatasetWide.id).offset(offset).limit(page_size)
     
+    def flatten_row_data(data):
+        """Flatten nested JSONB categories into a flat dict for EDA display."""
+        flat = {}
+        for key, value in data.items():
+            if key.startswith('_'):  # skip internal metadata
+                continue
+            if isinstance(value, dict):
+                for nested_key, nested_val in value.items():
+                    if nested_key.startswith('_'):
+                        continue
+                    # 'other' is a catch-all category - don't prefix those fields
+                    if key == 'other':
+                        flat[nested_key] = nested_val
+                    else:
+                        flat[f"{key}.{nested_key}"] = nested_val
+            else:
+                flat[key] = value
+        return flat
+
     rows = []
     schema = {}
     columns = []
     
     for row in rows_query:
         if row.data:
+            flat_data = flatten_row_data(row.data)
             # Extract columns from first row
             if not columns:
-                columns = list(row.data.keys())
-                # Build schema from row data types
+                columns = list(flat_data.keys())
                 for col in columns:
-                    value = row.data.get(col)
-                    if isinstance(value, (int, float)):
-                        schema[col] = 'numeric'
-                    elif isinstance(value, bool):
+                    value = flat_data.get(col)
+                    if isinstance(value, bool):
                         schema[col] = 'boolean'
+                    elif isinstance(value, (int, float)):
+                        schema[col] = 'numeric'
                     else:
                         schema[col] = 'text'
             
             rows.append({
-                'staging_id': row.id,  # Use FlexibleDatasetWide.id as surrogate staging_id
-                'data': row.data
+                'staging_id': row.id,
+                'data': flat_data
             })
     
     return {
