@@ -101,10 +101,12 @@ export default function DashboardLayout({ children }) {
     <div className="min-h-screen flex" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)' }}>
       {/* Sidebar */}
       <aside
+        onClick={() => !sidebarExpanded && setSidebarExpanded(true)}
         className="fixed left-0 top-0 h-screen flex flex-col transition-all duration-300 ease-out overflow-hidden"
         style={{ 
           width: sidebarExpanded ? '200px' : '64px', 
           zIndex: 9999,
+          cursor: sidebarExpanded ? 'default' : 'pointer',
           fontSize: '80%',
           background: 'linear-gradient(180deg, #0A0118 0%, #120325 45%, #1A0633 100%)',
           backgroundImage: `
@@ -124,21 +126,34 @@ export default function DashboardLayout({ children }) {
 
         {/* Brand with Toggle */}
         <div className="h-16 flex items-center justify-center gap-2.5 px-3 border-b border-white/[0.06] relative z-10" style={{ paddingTop: '8px' }}>
-          <button
-            onClick={() => setSidebarExpanded(!sidebarExpanded)}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              setSidebarExpanded(!sidebarExpanded);
+            }}
             className="group/toggle flex-shrink-0 relative transition-all cursor-pointer"
             title={sidebarExpanded ? 'Close sidebar' : 'Open sidebar'}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            <img src="/Logo/MyAria-I Logo.png" alt="MyAria-i Logo" className="w-8 h-8 object-contain" />
+            <img 
+              src="/Logo/MyAria-I Logo.png" 
+              alt="MyAria-i Logo" 
+              className="w-10 h-10 object-contain"
+              style={{ display: 'block', minWidth: '40px', minHeight: '40px' }}
+              onError={(e) => {
+                console.error('Logo failed to load:', e.target.src);
+                e.target.style.display = 'none';
+              }}
+            />
             
             {/* Hover tooltip when collapsed */}
             {!sidebarExpanded && (
-              <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/toggle:opacity-100 transition-opacity pointer-events-none">
-                Open sidebar
+              <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/toggle:opacity-100 transition-opacity pointer-events-none z-50">
+                Click to open sidebar
                 <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-gray-900" />
               </div>
             )}
-          </button>
+          </div>
           
           <span className={`font-syne font-extrabold text-[15px] text-white tracking-wide transition-opacity duration-200 whitespace-nowrap flex items-center gap-1.5 ${
             sidebarExpanded ? 'opacity-100' : 'opacity-0'
