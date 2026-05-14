@@ -80,6 +80,7 @@ export default function DashboardPage() {
     try {
       // Load user data
       const userData = await authAPI.getCurrentUser();
+      console.log('[Dashboard] Current user:', userData);
       setUser(userData);
       
       // Load dashboard statistics
@@ -89,11 +90,27 @@ export default function DashboardPage() {
       
       // Filter data by current user (unless superuser)
       const currentUserId = userData?.id;
+      const currentUsername = userData?.username;
       const isSuperuser = userData?.is_superuser;
+      
+      console.log('[Dashboard] User filter:', { currentUserId, currentUsername, isSuperuser });
       
       // Process uploads data (filter by user unless superuser)
       const uploadsData = dashboardData.uploads;
-      const userUploads = isSuperuser ? uploadsData.uploads : (uploadsData.uploads || []).filter(u => u.user_id === currentUserId || u.uploaded_by_id === currentUserId);
+      console.log('[Dashboard] Total uploads:', uploadsData.uploads?.length);
+      console.log('[Dashboard] Sample upload:', uploadsData.uploads?.[0]);
+      
+      const userUploads = isSuperuser ? uploadsData.uploads : (uploadsData.uploads || []).filter(u => {
+        const match = String(u.user_id) === String(currentUserId) || 
+                     String(u.uploaded_by_id) === String(currentUserId) || 
+                     u.uploaded_by === currentUsername;
+        if (!match && uploadsData.uploads.length < 5) {
+          console.log('[Dashboard] Upload filtered out:', { upload: u, reason: 'no user match' });
+        }
+        return match;
+      });
+      
+      console.log('[Dashboard] User uploads count:', userUploads.length);
       const totalDatasets = userUploads.length;
       const totalRecordsFromUploads = userUploads.reduce((sum, upload) => {
         return sum + (upload.row_count || 0);
@@ -112,12 +129,16 @@ export default function DashboardPage() {
       
       // Process ML models data (filter by user unless superuser)
       const modelsData = dashboardData.models;
-      const userModels = isSuperuser ? modelsData.models : (modelsData.models || []).filter(m => m.user_id === currentUserId);
+      const userModels = isSuperuser ? modelsData.models : (modelsData.models || []).filter(m => 
+        String(m.user_id) === String(currentUserId) || m.username === currentUsername
+      );
       const totalModels = userModels.length;
       
       // Process training data (filter by user unless superuser)
       const trainingData = dashboardData.training;
-      const userJobs = isSuperuser ? trainingData.jobs : (trainingData.jobs || []).filter(j => j.user_id === currentUserId);
+      const userJobs = isSuperuser ? trainingData.jobs : (trainingData.jobs || []).filter(j => 
+        String(j.user_id) === String(currentUserId) || j.username === currentUsername
+      );
       const runningJobs = userJobs.filter(job => 
         job.status === 'running' || job.status === 'queued'
       ).length || 0;
