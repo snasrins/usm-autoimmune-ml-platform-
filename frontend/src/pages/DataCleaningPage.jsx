@@ -453,7 +453,7 @@ export default function DataCleaningPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.65 }}>
+      <div className="flex-1 overflow-y-auto p-6" style={{ background: '#FAFBFC', zoom: 0.78 }}>
           {/* Before/After Comparison Modal */}
           {showComparison && beforeStats && afterStats && (
             <div className="mb-6 bg-gradient-to-br from-green-50 to-blue-50 rounded-xl border-2 border-green-300 shadow-lg overflow-hidden">

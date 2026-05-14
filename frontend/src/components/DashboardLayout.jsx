@@ -144,16 +144,18 @@ export default function DashboardLayout({ children }) {
           >
             <img 
               src="/Logo/MyAria-I Logo.png" 
-              alt="M" 
+              alt="MyAria-i" 
               className={sidebarExpanded ? "w-10 h-10" : "w-12 h-12"}
               style={{ 
                 display: 'block', 
-                objectFit: 'contain',
-                filter: 'brightness(0) invert(1)'
+                objectFit: 'contain'
               }}
               onError={(e) => {
                 console.error('Logo failed to load from:', e.target.src);
-                e.target.outerHTML = '<div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:bold;background:linear-gradient(135deg,#A855F7,#7C3AED);border-radius:8px;">M</div>';
+                const fallback = document.createElement('div');
+                fallback.style.cssText = 'width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:bold;background:linear-gradient(135deg,#A855F7,#7C3AED);border-radius:8px;';
+                fallback.textContent = 'M';
+                e.target.parentNode.replaceChild(fallback, e.target);
               }}
             />
             

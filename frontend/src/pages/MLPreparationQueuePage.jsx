@@ -105,8 +105,13 @@ export default function MLPreparationQueuePage() {
   const handleTrain = (datasetId) => navigate('/training', { state: { datasetId } });
   
   const handleView = (datasetId, status) => {
-    if (status === 'preview') navigate('/data-pipeline', { state: { sessionId: datasetId } });
-    else navigate(`/ml-preparation/${datasetId}`);
+    // Navigate to data-preparation page with proper state
+    navigate('/data-preparation', { 
+      state: { 
+        sessionId: datasetId,
+        viewMode: true // Read-only mode for other users' data
+      } 
+    });
   };
   
   const getStatusBadge = (dataset) => {
@@ -318,21 +323,26 @@ export default function MLPreparationQueuePage() {
                               <Eye size={16} />
                             </button>
                             
-                            {/* ML Prep Button - for all datasets */}
-                            <button onClick={() => handleMLPrep(dataset)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Start ML Preparation">
-                              <Play size={16} className="fill-blue-600" />
-                            </button>
+                            {/* ML Prep Button - only for own datasets */}
+                            {(user?.id === dataset.user_id || user?.id === dataset.uploaded_by_id) && (
+                              <button onClick={() => handleMLPrep(dataset)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Start ML Preparation">
+                                <Play size={16} className="fill-blue-600" />
+                              </button>
+                            )}
                             
-                            {/* Train Button - only for ready datasets */}
-                            {(dataset.status === 'saved' || dataset.ml_prep_status === 'ready') && (
+                            {/* Train Button - only for ready datasets + own datasets */}
+                            {(dataset.status === 'saved' || dataset.ml_prep_status === 'ready') && (user?.id === dataset.user_id || user?.id === dataset.uploaded_by_id) && (
                               <button onClick={() => handleTrain(dataset.id)} className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Start ML Training">
                                 <Play size={16} />
                               </button>
                             )}
                             
-                            <button onClick={() => handleDelete(dataset.id)} className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Dataset">
-                              <Trash2 size={16} />
-                            </button>
+                            {/* Delete Button - only for own datasets */}
+                            {(user?.id === dataset.user_id || user?.id === dataset.uploaded_by_id) && (
+                              <button onClick={() => handleDelete(dataset.id)} className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Dataset">
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </motion.tr>

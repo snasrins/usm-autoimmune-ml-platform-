@@ -460,9 +460,17 @@ const [sessionId, setSessionId] = useState(null);
   };
 
   const handleCellSave = async () => {
-    if (!editingCell || !sessionId) return;
+    if (!editingCell || !sessionId) {
+      setEditingCell(null);
+      return;
+    }
     
     const row = previewData.rows[editingCell.rowIndex];
+    if (!row) {
+      setEditingCell(null);
+      return;
+    }
+    
     const stagingId = row.staging_id;
     
     try {
@@ -481,7 +489,11 @@ const [sessionId, setSessionId] = useState(null);
       
       setEditingCell(null);
     } catch (err) {
+      console.error('Failed to update cell:', err);
       setError(err.response?.data?.detail || 'Failed to update cell');
+      setEditingCell(null);
+      // Reload preview to ensure data consistency
+      await loadPreview(sessionId, currentPage);
     }
   };
 
