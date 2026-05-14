@@ -100,7 +100,7 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-purple-900/50 overflow-hidden flex items-center justify-center p-6" style={{ zoom: 0.75 }}>
+    <div className="fixed inset-0 bg-gradient-to-br from-slate-900 via-gray-900 to-purple-900/50 overflow-hidden flex items-center justify-center p-6" style={{ zoom: 0.9 }}>
       
       {/* Blurred gradient blobs - Medical AI aesthetic */}
       <div className="absolute top-[-150px] left-[-150px] w-[500px] h-[500px] bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
@@ -109,7 +109,7 @@ export default function SignUpPage() {
       
       <div className="relative z-10 w-full max-w-6xl animate-fade-up">
         <div className="bg-white/95 backdrop-blur-xl rounded-card shadow-2xl overflow-hidden">
-          <div className="grid md:grid-cols-2 min-h-[700px]">
+          <div className="grid md:grid-cols-2 min-h-[600px]">
             
             {/* Left Panel - Dark with DNA theme */}
             <div className="relative bg-black-cta p-panel overflow-hidden">
@@ -119,9 +119,7 @@ export default function SignUpPage() {
               
               {/* Logo */}
               <div className="relative z-10 flex items-center gap-3 mb-12">
-                <div className="w-12 h-12 rounded-lg bg-white flex items-center justify-center p-1.5">
-                  <img src="/Logo/MyAria-I Logo.png" alt="MyAria-i Logo" className="w-full h-full object-contain" />
-                </div>
+                <img src="/Logo/MyAria-I Logo.png" alt="MyAria-i Logo" className="w-16 h-16 object-contain" />
                 <span className="font-syne text-2xl font-bold text-white flex items-center gap-2">
                   MyAria-i
                   <Copyright className="w-4 h-4" />
