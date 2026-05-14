@@ -810,3 +810,83 @@ async def get_recent_uploads(
         'limit': limit
     }
 
+
+@router.get("/saved-dataset/{batch_id}/preview")
+async def get_saved_dataset_preview(
+    batch_id: str,
+    page: int = 1,
+    page_size: int = 100,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get preview data from a SAVED dataset (FlexibleDatasetWide table)
+    Used for EDA and data exploration of finalized datasets
+    
+    Args:
+        batch_id: Import batch ID (UUID)
+        page: Page number (1-indexed)
+        page_size: Records per page (default: 100)
+    
+    Returns:
+        Paginated data with schema matching preview format
+    """
+    from app.models.flexible_data import FlexibleDatasetWide
+    from sqlalchemy import func
+    
+    try:
+        batch_uuid = uuid.UUID(batch_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid batch_id format")
+    
+    # Get total row count
+    total_rows = db.query(func.count(FlexibleDatasetWide.id)).filter(
+        FlexibleDatasetWide.import_batch_id == batch_uuid
+    ).scalar() or 0
+    
+    if total_rows == 0:
+        raise HTTPException(status_code=404, detail="Dataset not found or empty")
+    
+    # Calculate pagination
+    total_pages = (total_rows + page_size - 1) // page_size
+    offset = (page - 1) * page_size
+    
+    # Fetch paginated rows
+    rows_query = db.query(FlexibleDatasetWide).filter(
+        FlexibleDatasetWide.import_batch_id == batch_uuid
+    ).order_by(FlexibleDatasetWide.id).offset(offset).limit(page_size)
+    
+    rows = []
+    schema = {}
+    columns = []
+    
+    for row in rows_query:
+        if row.row_data:
+            # Extract columns from first row
+            if not columns:
+                columns = list(row.row_data.keys())
+                # Build schema from row data types
+                for col in columns:
+                    value = row.row_data.get(col)
+                    if isinstance(value, (int, float)):
+                        schema[col] = 'numeric'
+                    elif isinstance(value, bool):
+                        schema[col] = 'boolean'
+                    else:
+                        schema[col] = 'text'
+            
+            rows.append({
+                'staging_id': row.id,  # Use FlexibleDatasetWide.id as surrogate staging_id
+                'data': row.row_data
+            })
+    
+    return {
+        'session_id': str(batch_uuid),
+        'total_rows': total_rows,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': total_pages,
+        'rows': rows,
+        'schema': schema
+    }
+

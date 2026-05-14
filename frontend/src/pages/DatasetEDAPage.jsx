@@ -66,7 +66,9 @@ export default function DatasetEDAPage() {
     setLoading(true);
     try {
       // Load preview data (first 100 rows)
-      const preview = await flexibleAPI.getPreview(datasetId, 1, 100);
+      // Use saved dataset API since datasets in ML Queue are saved (status: 'saved')
+      console.log('[EDA] Loading saved dataset:', datasetId);
+      const preview = await flexibleAPI.getSavedDatasetPreview(datasetId, 1, 100);
       console.log('[EDA] Preview data:', preview);
       console.log('[EDA] Preview keys:', Object.keys(preview));
       console.log('[EDA] Preview.rows:', preview.rows);

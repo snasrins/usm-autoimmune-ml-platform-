@@ -529,6 +529,21 @@ export const flexibleAPI = {
     const response = await api.delete(`/flexible/preview/${sessionId}`);
     return response.data;
   },
+
+  /**
+   * Get preview data from a saved dataset (FlexibleDatasetWide table)
+   * Used for EDA and data exploration of finalized datasets
+   * @param {string} batchId - Import batch ID
+   * @param {number} page - Page number (1-indexed)
+   * @param {number} pageSize - Rows per page
+   * @returns {Promise<{session_id: string, total_rows: number, rows: array, schema: object}>}
+   */
+  getSavedDatasetPreview: async (batchId, page = 1, pageSize = 100) => {
+    const response = await api.get(`/flexible/saved-dataset/${batchId}/preview`, {
+      params: { page, page_size: pageSize }
+    });
+    return response.data;
+  },
 };
 // ========== LAYER 5: PREPROCESSING & DATA CLEANING API ==========
 // Connected to import_preview_staging → Apply Preprocessing → flexible_dataset_wide → ML Pipeline
