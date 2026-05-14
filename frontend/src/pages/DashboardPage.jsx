@@ -101,7 +101,13 @@ export default function DashboardPage() {
       console.log('[Dashboard] Sample upload FULL:', JSON.stringify(uploadsData.uploads?.[0], null, 2));
       
       const userUploads = isSuperuser ? uploadsData.uploads : (uploadsData.uploads || []).filter(u => {
-        // Check multiple possible ID and username fields with flexible matching
+        // Use backend's is_owner field if available (most reliable)
+        if (u.is_owner !== undefined) {
+          console.log('[Dashboard] Using is_owner field:', u.is_owner, 'for', u.file_name?.substring(0, 30));
+          return u.is_owner === true;
+        }
+        
+        // Fallback: Check multiple possible ID and username fields with flexible matching
         const userIdMatch = String(u.user_id) === String(currentUserId) || 
                            String(u.uploaded_by_id) === String(currentUserId);
         
@@ -116,12 +122,14 @@ export default function DashboardPage() {
         
         if (!match) {
           console.log('[Dashboard] Upload filtered out:', { 
-            uploadId: u.id,
+            uploadId: u.id?.substring(0, 8),
+            fileName: u.file_name?.substring(0, 30),
             uploadedBy: u.uploaded_by, 
             userId: u.user_id,
             uploadedById: u.uploaded_by_id,
             currentUsername,
             currentUserId,
+            isOwner: u.is_owner,
             reason: 'no match'
           });
         }

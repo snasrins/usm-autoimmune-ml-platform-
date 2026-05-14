@@ -339,21 +339,21 @@ export default function MLPreparationQueuePage() {
                             </button>
                             
                             {/* ML Prep Button - only for own datasets */}
-                            {(user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by)) && (
+                            {(dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
                               <button onClick={() => handleMLPrep(dataset)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Start ML Preparation">
                                 <Play size={16} className="fill-blue-600" />
                               </button>
                             )}
                             
                             {/* Train Button - only for ready datasets + own datasets */}
-                            {(dataset.status === 'saved' || dataset.ml_prep_status === 'ready') && (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by)) && (
+                            {(dataset.status === 'saved' || dataset.ml_prep_status === 'ready') && (dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
                               <button onClick={() => handleTrain(dataset.id)} className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Start ML Training">
                                 <Play size={16} />
                               </button>
                             )}
                             
                             {/* Delete Button - only for own datasets */}
-                            {(user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by)) && (
+                            {(dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
                               <button onClick={() => handleDelete(dataset.id)} className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Dataset">
                                 <Trash2 size={16} />
                               </button>
