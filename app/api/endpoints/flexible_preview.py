@@ -861,13 +861,13 @@ async def get_saved_dataset_preview(
     columns = []
     
     for row in rows_query:
-        if row.row_data:
+        if row.data:
             # Extract columns from first row
             if not columns:
-                columns = list(row.row_data.keys())
+                columns = list(row.data.keys())
                 # Build schema from row data types
                 for col in columns:
-                    value = row.row_data.get(col)
+                    value = row.data.get(col)
                     if isinstance(value, (int, float)):
                         schema[col] = 'numeric'
                     elif isinstance(value, bool):
@@ -877,7 +877,7 @@ async def get_saved_dataset_preview(
             
             rows.append({
                 'staging_id': row.id,  # Use FlexibleDatasetWide.id as surrogate staging_id
-                'data': row.row_data
+                'data': row.data
             })
     
     return {
