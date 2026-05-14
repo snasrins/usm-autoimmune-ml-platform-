@@ -67,26 +67,77 @@ export default function DatasetEDAPage() {
     try {
       // Load preview data (first 100 rows)
       const preview = await flexibleAPI.getPreview(datasetId, 1, 100);
-      setPreviewData(preview);
+      console.log('[EDA] Preview data:', preview);
       
-      // Load quality report for statistics
-      const quality = await preprocessingAPI.getQualityReport(datasetId);
+      // Normalize preview structure
+      const normalizedPreview = {
+        rows: preview.rows || [],
+        columns: preview.columns || (preview.rows && preview.rows.length > 0 
+          ? Object.keys(preview.rows[0].data || {}) 
+          : []),
+        total_rows: preview.total_rows || preview.rows?.length || 0
+      };
+      
+      setPreviewData(normalizedPreview);
+      
+      // Try to load quality report (optional - graceful fallback)
+      let quality = null;
+      try {
+        quality = await preprocessingAPI.getQualityReport(datasetId);
+        console.log('[EDA] Quality report:', quality);
+      } catch (qualityError) {
+        console.warn('[EDA] Quality report not available:', qualityError.message);
+        // Continue without quality report
+      }
       
       // Process data for visualizations
-      processDataForEDA(preview, quality);
+      if (normalizedPreview.rows.length > 0) {
+        processDataForEDA(normalizedPreview, quality);
+      } else {
+        setInsights([{
+          type: 'warning',
+          icon: AlertTriangle,
+          title: 'No Data',
+          message: 'No data available for analysis. The dataset might be empty.'
+        }]);
+      }
       
     } catch (error) {
       console.error('Failed to load EDA data:', error);
+      setInsights([{
+        type: 'error',
+        icon: AlertTriangle,
+        title: 'Error Loading Data',
+        message: error.response?.data?.detail || error.message || 'Failed to load dataset'
+      }]);
     } finally {
       setLoading(false);
     }
   };
 
   const processDataForEDA = (preview, quality) => {
-    if (!preview?.rows || preview.rows.length === 0) return;
+    if (!preview?.rows || preview.rows.length === 0) {
+      console.warn('[EDA] No rows to process');
+      return;
+    }
     
     const rows = preview.rows;
-    const columns = preview.columns || Object.keys(rows[0].data || {});
+    const columns = preview.columns && preview.columns.length > 0 
+      ? preview.columns 
+      : Object.keys(rows[0]?.data || {});
+    
+    if (columns.length === 0) {
+      console.warn('[EDA] No columns found');
+      setInsights([{
+        type: 'warning',
+        icon: AlertTriangle,
+        title: 'No Columns',
+        message: 'Dataset structure could not be determined'
+      }]);
+      return;
+    }
+    
+    console.log('[EDA] Processing', rows.length, 'rows and', columns.length, 'columns');
     
     // 1. Detect column types and calculate statistics
     const types = {};
@@ -418,14 +469,14 @@ export default function DatasetEDAPage() {
               {expandedSections.overview ? <ChevronUp className="w-5 h-5 text-gray-600" /> : <ChevronDown className="w-5 h-5 text-gray-600" />}
             </div>
             
-            {expandedSections.overview && previewData?.rows && (
+            {expandedSections.overview && previewData?.rows && previewData.rows.length > 0 && (
               <div className="p-6">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gradient-to-r from-purple-600 to-pink-600 text-white">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold">#</th>
-                        {previewData.columns.slice(0, 10).map(col => (
+                        {(previewData.columns || []).slice(0, 10).map(col => (
                           <th key={col} className="px-4 py-3 text-left font-semibold whitespace-nowrap">
                             {col}
                             <span className="ml-2 text-xs opacity-75">
@@ -439,7 +490,7 @@ export default function DatasetEDAPage() {
                       {previewData.rows.slice(0, 10).map((row, idx) => (
                         <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                           <td className="px-4 py-2 font-semibold text-gray-500">{idx + 1}</td>
-                          {previewData.columns.slice(0, 10).map(col => (
+                          {(previewData.columns || []).slice(0, 10).map(col => (
                             <td key={col} className="px-4 py-2 text-gray-700">
                               {row.data[col] !== null && row.data[col] !== undefined 
                                 ? String(row.data[col]).substring(0, 30)
@@ -452,7 +503,7 @@ export default function DatasetEDAPage() {
                     </tbody>
                   </table>
                 </div>
-                {previewData.columns.length > 10 && (
+                {previewData.columns && previewData.columns.length > 10 && (
                   <p className="mt-4 text-sm text-gray-500 text-center">
                     Showing first 10 of {previewData.columns.length} columns
                   </p>
