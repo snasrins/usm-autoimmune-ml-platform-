@@ -825,7 +825,7 @@ export default function DataPreparationPage() {
 
   return (
     <DashboardLayout>
-      <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
+      <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.78 }}>
         
         {/* QUEUE VIEW: Show dataset list with ML prep status */}
         {viewMode === 'queue' && (
@@ -1163,7 +1163,7 @@ export default function DataPreparationPage() {
           <>
         {/* Header */}
         <div className="bg-white/60 backdrop-blur-sm border-b border-white/40">
-          <div className="px-6 py-5">
+          <div className="px-5 py-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <button
@@ -1419,7 +1419,7 @@ export default function DataPreparationPage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-5">
           <div className="max-w-7xl mx-auto">
             {/* TAB 1: Upload & Import */}
             {activeTab === 'upload' && (
@@ -1626,7 +1626,7 @@ export default function DataPreparationPage() {
                       
                       <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
                         <p className="text-xs text-purple-700">
-                          <strong>📊 What this means:</strong> Your labeled data shows {Object.keys(targetDistribution).length} different diagnoses. 
+                          <strong>What this means:</strong> Your labeled data shows {Object.keys(targetDistribution).length} different diagnoses. 
                           The ML model will learn to distinguish between these based on biomarker patterns.
                         </p>
                       </div>
@@ -1936,10 +1936,33 @@ export default function DataPreparationPage() {
                     <Settings className="w-4 h-4 text-white" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-sm font-bold text-purple-900 mb-1">Data Preprocessing Pipeline</h3>
-                    <p className="text-xs text-purple-700">
+                    <h3 className="text-sm font-bold text-purple-900 mb-1">ML Data Preprocessing Pipeline</h3>
+                    <p className="text-xs text-purple-700 mb-2">
                       Transform raw data following research standards: <strong>Variable Filtration</strong> → <strong>Imputation</strong> → <strong>Winsorization</strong> → <strong>Standardization</strong>
                     </p>
+                    <div className="bg-white/70 border border-purple-200 rounded-lg p-3 text-xs text-purple-800">
+                      <strong>How is this different from Data Cleaning (Auto-Clean)?</strong>
+                      <div className="mt-1.5 grid grid-cols-2 gap-2">
+                        <div className="bg-purple-50 rounded p-2">
+                          <div className="font-semibold text-purple-700 mb-1">Data Cleaning (optional, earlier)</div>
+                          <div className="text-gray-600 space-y-0.5">
+                            <div>• Fill NAs with median/mode</div>
+                            <div>• Remove duplicate rows</div>
+                            <div>• IQR-based outlier capping (1.5×)</div>
+                          </div>
+                        </div>
+                        <div className="bg-indigo-50 rounded p-2">
+                          <div className="font-semibold text-indigo-700 mb-1">ML Preprocessing (required, here)</div>
+                          <div className="text-gray-600 space-y-0.5">
+                            <div>• Drop features &gt;50% missing (column-level)</div>
+                            <div>• Research-grade imputation</div>
+                            <div>• 1%/99% winsorization (less aggressive)</div>
+                            <div>• Z-score standardization for ML</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-gray-500">Run both in sequence for best results — they operate at different levels and do not conflict.</div>
+                    </div>
                   </div>
                 </div>
 
@@ -2567,99 +2590,15 @@ export default function DataPreparationPage() {
                   )}
                 </div>
                 
-                {/* Feature Transformation */}
-                <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-syne text-lg font-bold text-black-text">Feature Scaling & Transformation</h3>
-                    <div className="group relative">
-                      <AlertCircle className="w-5 h-5 text-purple-500 cursor-help" />
-                      <div className="hidden group-hover:block absolute right-0 top-6 w-80 bg-purple-900 text-white text-xs rounded-lg p-4 z-10 shadow-xl">
-                        <strong className="text-purple-200">When to use these features:</strong><br/><br/>
-                        <strong className="text-green-300">✓ Recommended for beginners:</strong><br/>
-                        • Standard Scaling<br/>
-                        • Auto-remove correlated features<br/><br/>
-                        <strong className="text-amber-300">⚠ Advanced options (optional):</strong><br/>
-                        • Log transform, Polynomial, Interactions<br/>
-                        • Only if you understand their impact
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-medium text-gray-700">Scaling Method</label>
-                        <span className="text-xs text-purple-600 font-semibold">Use Standard for most cases</span>
-                      </div>
-                      <select
-                        value={scalingMethod}
-                        onChange={(e) => setScalingMethod(e.target.value)}
-                        className="w-full px-4 py-3 rounded-lg border border-white/40 bg-white/80"
-                      >
-                        <option value="standard">✓ Standardization (Z-score) - Recommended for ML</option>
-                        <option value="minmax">Min-Max Normalization (0-1) - For neural networks</option>
-                        <option value="robust">Robust Scaling (IQR) - For data with outliers</option>
-                        <option value="none">No Scaling - Not recommended</option>
-                      </select>
-                      <p className="text-xs text-gray-500 mt-1">Scaling ensures all features have equal importance regardless of their original units</p>
-                    </div>
-                    
-                    <div className="border-t border-gray-200 pt-4">
-                      <div className="font-semibold text-sm text-gray-700 mb-3">Feature Engineering Options</div>
-                      <div className="space-y-3 bg-gray-50 rounded-lg p-3">
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureConfig.removeHighCorr}
-                            onChange={(e) => setFeatureConfig({...featureConfig, removeHighCorr: e.target.checked})}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">Auto-remove highly correlated features (&gt;0.95)</span>
-                            <p className="text-xs text-gray-600 mt-0.5">✓ Recommended: Removes redundant features that provide duplicate information</p>
-                          </div>
-                        </label>
-                        
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureConfig.logTransform}
-                            onChange={(e) => setFeatureConfig({...featureConfig, logTransform: e.target.checked})}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">Apply log transform to skewed features</span>
-                            <p className="text-xs text-gray-600 mt-0.5">Advanced: Normalizes highly skewed distributions (e.g., biomarker levels)</p>
-                          </div>
-                        </label>
-                        
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureConfig.polynomialFeatures}
-                            onChange={(e) => setFeatureConfig({...featureConfig, polynomialFeatures: e.target.checked})}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">Generate polynomial features (degree 2)</span>
-                            <p className="text-xs text-gray-600 mt-0.5">Advanced: Creates squared terms (x²) for non-linear relationships</p>
-                          </div>
-                        </label>
-                        
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureConfig.interactionTerms}
-                            onChange={(e) => setFeatureConfig({...featureConfig, interactionTerms: e.target.checked})}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">Create interaction terms (feature × feature)</span>
-                            <p className="text-xs text-gray-600 mt-0.5">Advanced: Captures combined effects (e.g., age × biomarker level)</p>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
+                {/* Note: Scaling removed — handled by Preprocessing Step 4 (Standardization) */}
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-blue-900">Feature Scaling is already handled</p>
+                    <p className="text-xs text-blue-700 mt-0.5">
+                      Z-score standardisation was applied during <strong>Preprocessing Step 4 (Standardisation)</strong>. No additional scaling is needed here — applying it twice would distort the data.
+                      If you skipped Preprocessing, go back and run it first.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -3185,262 +3124,251 @@ export default function DataPreparationPage() {
             )}
 
             {/* TAB 8: Summary */}
-            {activeTab === 'summary' && selectedBatch && (
-              <div className="space-y-6">
-                {/* Configuration Summary Card */}
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-purple-primary flex items-center justify-center">
-                        <BarChart3 className="w-5 h-5 text-white" />
-                      </div>
-                      <h3 className="font-syne text-xl font-bold text-purple-primary">Configuration Summary</h3>
+            {activeTab === 'summary' && selectedBatch && (() => {
+              const stepsCompleted = [isUploadComplete, isLabelingComplete, isTargetComplete, isPreprocessingComplete, isFeaturesComplete, finalFeatures.length > 0, isValidationComplete].filter(Boolean).length;
+              const readinessPct = Math.round(stepsCompleted / 7 * 100);
+              return (
+              <div className="space-y-5">
+
+                {/* Hero Banner */}
+                <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)' }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="font-syne text-2xl font-bold mb-1">ML Preparation Summary</h2>
+                      <p className="text-purple-200 text-sm truncate max-w-md">{selectedBatch.name}</p>
+                      <p className="text-purple-300 text-xs mt-1">Batch ID: {selectedBatch.id?.substring(0,12)}…</p>
                     </div>
-                    <button
-                      onClick={saveConfiguration}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border-2 border-purple-300 text-purple-primary hover:bg-purple-50 transition-all font-medium"
-                    >
-                      <Save className="w-4 h-4" />
-                      Save Draft
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white/80 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isUploadComplete ? 'bg-green-600' : 'bg-gray-300'
-                        }`}>
-                          {isUploadComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">1</span>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-black-text mb-1">Dataset Selected</div>
-                          <div className="text-xs text-gray-muted">{selectedBatch.name}</div>
-                        </div>
+                    <div className="text-right flex-shrink-0 ml-6">
+                      <div className="text-5xl font-bold">{stepsCompleted}<span className="text-2xl text-purple-300">/7</span></div>
+                      <div className="text-purple-200 text-sm mt-1">Steps Complete</div>
+                      <div className="mt-2 w-32 h-2 bg-purple-900/40 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-white/80" style={{ width: `${readinessPct}%` }} />
                       </div>
-                    </div>
-                    
-                    <div className="bg-white/80 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isLabelingComplete ? 'bg-green-600' : 'bg-gray-300'
-                        }`}>
-                          {isLabelingComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">2</span>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-black-text mb-1">Labeling Progress</div>
-                          <div className="text-xs text-gray-muted">{labelingProgress}% complete ({selectedBatch.labeledRecords ?? 0}/{selectedBatch.totalRecords ?? 0} records)</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-white/80 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isTargetComplete ? 'bg-green-600' : 'bg-gray-300'
-                        }`}>
-                          {isTargetComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">3</span>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-black-text mb-1">Target Variable</div>
-                          <div className="text-xs text-gray-muted">{targetColumn || 'Not set'}</div>
-                          <div className="text-xs text-gray-muted mt-1">Split: {((1-trainTestSplit)*100).toFixed(0)}% train / {(trainTestSplit*100).toFixed(0)}% test {stratifyEnabled && '(stratified)'}</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-white/80 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isFeaturesComplete ? 'bg-green-600' : 'bg-gray-300'
-                        }`}>
-                          {isFeaturesComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">4</span>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-black-text mb-1">Feature Engineering</div>
-                          <div className="text-xs text-gray-muted">{selectedFeatures.length > 0 ? `${selectedFeatures.length} features selected` : 'Not configured'}</div>
-                          <div className="text-xs text-gray-muted mt-1">Scaling: {scalingMethod}</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-white/80 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isValidationComplete ? 'bg-green-600' : 'bg-gray-300'
-                        }`}>
-                          {isValidationComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">5</span>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-black-text mb-1">Validation Status</div>
-                          <div className="text-xs text-gray-muted">
-                            {validationResults 
-                              ? `${validationResults.passed}/${validationResults.total_checks} checks passed`
-                              : 'Not run yet'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-white/80 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isReadyForTraining ? 'bg-green-600' : 'bg-gray-300'
-                        }`}>
-                          {isReadyForTraining ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">6</span>}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-black-text mb-1">Ready for Training</div>
-                          <div className={`text-xs font-semibold ${
-                            isReadyForTraining ? 'text-green-600' : 'text-amber-600'
-                          }`}>
-                            {isReadyForTraining ? 'All checks passed ✓' : 'Complete all steps'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-blue-600">
-                        <span className="font-semibold">Keyboard Shortcut:</span> Press <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded text-xs font-mono">Enter</kbd> to advance to the next tab when current step is complete.
-                      </p>
+                      <div className="text-purple-200 text-xs mt-1">{readinessPct}% ready</div>
                     </div>
                   </div>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Dataset Overview */}
-                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
-                    <h3 className="font-syne text-lg font-bold text-black-text mb-4">Dataset Overview</h3>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between py-2 border-b border-white/40">
-                        <span className="text-sm text-gray-muted">Dataset Name</span>
-                        <span className="text-sm font-semibold text-black-text">{selectedBatch.name}</span>
+
+                {/* Pipeline Checklist */}
+                <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
+                  <h3 className="font-syne text-base font-bold text-black-text mb-4">Pipeline Checklist</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { step: 1, label: 'Dataset Selected',    done: isUploadComplete,          detail: selectedBatch.name,                                                                              tab: 'upload' },
+                      { step: 2, label: 'Labelling',           done: isLabelingComplete,         detail: `${labelingProgress}% · ${selectedBatch.labeledRecords ?? 0}/${selectedBatch.totalRecords} records`, tab: 'labeling' },
+                      { step: 3, label: 'Target Variable',     done: isTargetComplete,           detail: targetColumn || 'Not configured',                                                                tab: 'target' },
+                      { step: 4, label: 'Preprocessing',       done: isPreprocessingComplete,    detail: isPreprocessingComplete ? 'All 4 steps done' : (preprocessingStep ? `Step done: ${preprocessingStep}` : 'Not started'), tab: 'preprocessing' },
+                      { step: 5, label: 'Feature Engineering', done: isFeaturesComplete,         detail: featureEngineeringResults ? `${featureEngineeringResults.features_added} features added` : 'Not run', tab: 'features' },
+                      { step: 6, label: 'Feature Selection',   done: finalFeatures.length > 0,  detail: finalFeatures.length > 0 ? `${finalFeatures.length} features selected` : 'Not configured',       tab: 'feature-selection' },
+                      { step: 7, label: 'Validation',          done: isValidationComplete,       detail: validationResults ? `${validationResults.passed}/${validationResults.total_checks} checks passed` : 'Not run', tab: 'validation' },
+                    ].map(({ step, label, done, detail, tab }) => (
+                      <div key={step} className={`flex items-center gap-3 p-3 rounded-xl border ${done ? 'bg-green-50 border-green-200' : 'bg-gray-50/60 border-gray-200'}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${done ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                          {done ? <CheckCircle className="w-4 h-4" /> : step}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-semibold ${done ? 'text-green-900' : 'text-gray-600'}`}>{label}</div>
+                          <div className="text-xs text-gray-500 truncate">{detail}</div>
+                        </div>
+                        {!done && (
+                          <button onClick={() => setActiveTab(tab)} className="text-xs text-purple-600 hover:text-purple-800 font-medium flex-shrink-0">
+                            Go →
+                          </button>
+                        )}
+                        {done && <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex-shrink-0">Done</span>}
                       </div>
-                      <div className="flex items-center justify-between py-2 border-b border-white/40">
-                        <span className="text-sm text-gray-muted">Batch ID</span>
-                        <span className="text-sm font-mono text-black-text">{selectedBatch.id}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-2 border-b border-white/40">
-                        <span className="text-sm text-gray-muted">Total Samples</span>
-                        <span className="text-sm font-semibold text-purple-primary">{selectedBatch.totalRecords}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-2 border-b border-white/40">
-                        <span className="text-sm text-gray-muted">Selected Features</span>
-                        <span className="text-sm font-semibold text-black-text">{selectedFeatures.length || selectedBatch.features}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-2 border-b border-white/40">
-                        <span className="text-sm text-gray-muted">Target Column</span>
-                        <span className="text-sm font-semibold text-purple-primary">{targetColumn || 'Not set'}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-2 border-b border-white/40">
-                        <span className="text-sm text-gray-muted">Train/Test Split</span>
-                        <span className="text-sm font-semibold text-black-text">{((1-trainTestSplit)*100).toFixed(0)}/{(trainTestSplit*100).toFixed(0)}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-2 border-b border-white/40">
-                        <span className="text-sm text-gray-muted">Labeled Records</span>
-                        <span className="text-sm font-semibold text-green">{selectedBatch.labeledRecords ?? 0}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-2">
-                        <span className="text-sm text-gray-muted">Status</span>
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${(statusConfig[selectedBatch.status] || statusConfig.default).bg} ${(statusConfig[selectedBatch.status] || statusConfig.default).text}`}>
-                          {(statusConfig[selectedBatch.status] || statusConfig.default).label}
-                        </span>
-                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Detail Cards Row */}
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Dataset Card */}
+                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
+                    <h4 className="font-syne text-sm font-bold text-black-text mb-3 flex items-center gap-2">
+                      <Database className="w-4 h-4 text-purple-600" /> Dataset
+                    </h4>
+                    <div className="space-y-2 text-xs">
+                      {[
+                        ['Total Records',   selectedBatch.totalRecords?.toLocaleString()],
+                        ['Labelled',        `${selectedBatch.labeledRecords ?? 0} (${labelingProgress}%)`],
+                        ['Features (raw)',  selectedBatch.features],
+                        ['Target',          targetColumn ? LABEL_TYPES[targetColumn]?.name || targetColumn : '—'],
+                        ['Train / Test',    `${((1-trainTestSplit)*100).toFixed(0)}% / ${(trainTestSplit*100).toFixed(0)}%`],
+                        ['Stratified',      stratifyEnabled ? 'Yes' : 'No'],
+                      ].map(([k, v]) => (
+                        <div key={k} className="flex justify-between items-center">
+                          <span className="text-gray-500">{k}</span>
+                          <span className="font-semibold text-gray-800 text-right max-w-[120px] truncate">{v}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Quality Score */}
-                  <div className="bg-gradient-to-br from-purple-50 to-purple-50/50 border border-purple-200 rounded-2xl p-6">
-                    <h3 className="font-syne text-lg font-bold text-purple-primary mb-4">Data Quality Score</h3>
-                    <div className="flex items-center justify-center mb-6">
-                      <div className="relative">
-                        <div className="w-32 h-32 rounded-full flex items-center justify-center bg-white border-8 border-purple-primary">
-                          <div className="text-center">
-                            <div className="font-syne text-3xl font-bold text-purple-primary">
-                              {validationResults 
-                                ? ((validationResults.passed / validationResults.total_checks) * 100).toFixed(0)
-                                : 'N/A'}
+                  {/* Preprocessing Card */}
+                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
+                    <h4 className="font-syne text-sm font-bold text-black-text mb-3 flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-blue-600" /> Preprocessing
+                    </h4>
+                    <div className="space-y-2.5 text-xs">
+                      {[
+                        { label: 'Variable Filtration', done: !!filtrationReport,      detail: filtrationReport ? `${filtrationReport.removed_columns?.length ?? 0} vars removed` : 'Not run' },
+                        { label: 'Imputation',          done: !!imputationReport,      detail: imputationReport ? `Strategy: ${imputationStrategy}` : 'Not run' },
+                        { label: 'Winsorization',       done: !!winsorizeReport,       detail: winsorizeReport  ? `${(winsorLower*100).toFixed(0)}% – ${(winsorUpper*100).toFixed(0)}%` : 'Not run' },
+                        { label: 'Standardisation',     done: !!standardizationReport, detail: standardizationReport ? standardizationMethod : 'Not run' },
+                      ].map(({ label, done, detail }) => (
+                        <div key={label} className={`flex items-center justify-between p-2 rounded-lg ${done ? 'bg-green-50' : 'bg-gray-50'}`}>
+                          <span className={`flex items-center gap-1.5 font-medium ${done ? 'text-green-800' : 'text-gray-400'}`}>
+                            {done ? <CheckCircle className="w-3 h-3" /> : <span className="w-3 h-3 rounded-full border border-gray-300 inline-block" />}
+                            {label}
+                          </span>
+                          <span className={`${done ? 'text-green-700' : 'text-gray-400'}`}>{detail}</span>
+                        </div>
+                      ))}
+                      {preprocessingResults && (
+                        <div className="mt-2 pt-2 border-t border-gray-200 text-gray-600 space-y-1">
+                          <div className="flex justify-between"><span>Columns removed</span><span className="font-bold text-red-600">{preprocessingResults.columns_removed}</span></div>
+                          <div className="flex justify-between"><span>Rows preserved</span><span className="font-bold text-green-600">{preprocessingResults.final_rows}</span></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Features Card */}
+                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
+                    <h4 className="font-syne text-sm font-bold text-black-text mb-3 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-amber-600" /> Feature Engineering
+                    </h4>
+                    <div className="space-y-2 text-xs">
+                      {featureEngineeringResults ? (
+                        <>
+                          {[
+                            ['Original features', featureEngineeringResults.original_feature_count],
+                            ['New features added', `+${featureEngineeringResults.features_added}`],
+                            ['Total features', featureEngineeringResults.engineered_feature_count],
+                            ['Features selected', finalFeatures.length > 0 ? finalFeatures.length : (selectedFeatures.length || '—')],
+                          ].map(([k, v]) => (
+                            <div key={k} className="flex justify-between">
+                              <span className="text-gray-500">{k}</span>
+                              <span className="font-semibold text-gray-800">{v}</span>
                             </div>
-                            <div className="text-xs text-gray-muted">out of 100</div>
+                          ))}
+                          {featureEngineeringResults.new_features?.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-gray-200">
+                              <div className="text-gray-500 mb-1">Created:</div>
+                              <div className="flex flex-wrap gap-1">
+                                {featureEngineeringResults.new_features.slice(0, 5).map(f => (
+                                  <span key={f.name} className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-medium">{f.name}</span>
+                                ))}
+                                {featureEngineeringResults.new_features.length > 5 && (
+                                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">+{featureEngineeringResults.new_features.length - 5} more</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-center py-4">
+                          <p className="text-gray-400 italic">Feature engineering not run</p>
+                          <button onClick={() => setActiveTab('features')} className="mt-2 text-purple-600 text-xs hover:underline">Run now →</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Validation + Readiness Row */}
+                <div className="grid grid-cols-5 gap-4">
+                  {/* Readiness score */}
+                  <div className="col-span-2 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-5">
+                    <h4 className="font-syne text-sm font-bold text-purple-900 mb-4">Readiness Score</h4>
+                    <div className="flex items-center gap-5">
+                      <div className="relative w-24 h-24 flex-shrink-0">
+                        <div className="w-24 h-24 rounded-full flex items-center justify-center bg-white border-8 border-purple-500">
+                          <div className="text-center">
+                            <div className={`font-syne text-2xl font-bold ${readinessPct >= 80 ? 'text-green-600' : readinessPct >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{readinessPct}%</div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-muted">Validation Status</span>
-                        <span className={`font-semibold ${
-                          validationResults?.errors > 0 ? 'text-red-600' :
-                          validationResults?.warnings > 0 ? 'text-amber' : 'text-green'
-                        }`}>
-                          {validationResults 
-                            ? validationResults.errors > 0 ? 'Has Errors' : validationResults.warnings > 0 ? 'Has Warnings' : 'Passed'
-                            : 'Not Run'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-muted">Labeling Completeness</span>
-                        <span className={`font-semibold ${parseFloat(labelingProgress) >= 80 ? 'text-green' : 'text-amber'}`}>
-                          {labelingProgress}%
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-muted">Target Set</span>
-                        <span className={`font-semibold ${targetColumn ? 'text-green' : 'text-red-600'}`}>
-                          {targetColumn ? 'Yes' : 'No'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-muted">Features Selected</span>
-                        <span className={`font-semibold ${selectedFeatures.length > 0 ? 'text-green' : 'text-red-600'}`}>
-                          {selectedFeatures.length > 0 ? 'Yes' : 'No'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-muted">Ready for Training</span>
-                        <span className={`font-semibold ${isReadyForTraining ? 'text-green' : 'text-red-600'}`}>
-                          {isReadyForTraining ? 'Yes' : 'No'}
-                        </span>
+                      <div className="space-y-1.5 text-xs">
+                        {[
+                          ['Labelling ≥80%', isLabelingComplete],
+                          ['Preprocessing', isPreprocessingComplete],
+                          ['Features', isFeaturesComplete],
+                          ['Validation', isValidationComplete],
+                          ['Ready to train', isReadyForTraining],
+                        ].map(([label, ok]) => (
+                          <div key={label} className={`flex items-center gap-1.5 ${ok ? 'text-green-700' : 'text-gray-400'}`}>
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ok ? 'bg-green-500' : 'bg-gray-300'}`} />
+                            <span className="font-medium">{label}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
+                    {validationResults && (
+                      <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-center">
+                        {[
+                          ['Passed', validationResults.passed, 'text-green-600'],
+                          ['Warnings', validationResults.warnings, 'text-amber-600'],
+                          ['Errors', validationResults.errors, 'text-red-600'],
+                        ].map(([l, v, c]) => (
+                          <div key={l} className="bg-white/60 rounded-lg py-2">
+                            <div className={`text-lg font-bold ${c}`}>{v}</div>
+                            <div className="text-gray-500">{l}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-                
-                {/* Action Buttons */}
-                <div className="flex items-center justify-between mt-8 p-6 bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl">
-                  <div>
-                    <h4 className="font-semibold text-black-text mb-1">Ready to proceed?</h4>
-                    <p className="text-sm text-gray-muted">
-                      {isReadyForTraining 
-                        ? 'All checks passed! You can now proceed to model training.'
-                        : 'Complete all preparation steps before training.'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setActiveTab('upload')}
-                      className="flex items-center gap-2 px-6 py-3 rounded-lg border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition-all"
-                    >
-                      <ArrowLeft className="w-4 h-4" />
-                      Back to Edit
-                    </button>
-                    
-                    <button
-                      onClick={handleProceedToTraining}
-                      disabled={!isReadyForTraining || loading}
-                      className="flex items-center gap-2 px-6 py-3 rounded-lg bg-purple-primary text-white hover:shadow-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {loading ? 'Saving & Proceeding...' : 'Proceed to Training'}
-                      <Play className="w-4 h-4" />
-                    </button>
+
+                  {/* CTA */}
+                  <div className="col-span-3 bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5 flex flex-col justify-between">
+                    <div>
+                      <h4 className="font-syne text-base font-bold text-black-text mb-2">
+                        {isReadyForTraining ? '🎉 Ready for ML Training!' : 'Complete preparation to unlock training'}
+                      </h4>
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        {isReadyForTraining
+                          ? 'All preparation steps are complete. Your dataset is configured, labelled, preprocessed, and validated. Click below to launch the Training Job wizard with your configuration pre-loaded.'
+                          : 'Finish the outstanding steps marked above. Training requires: at least 80% labelling, preprocessing completed, and validation passing without errors.'}
+                      </p>
+                      {!isReadyForTraining && (
+                        <div className="mt-3 space-y-1.5">
+                          {!isLabelingComplete && <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"><AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> Labelling is below 80% — run auto-labelling on the Labelling tab</div>}
+                          {!isPreprocessingComplete && <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> Preprocessing not complete — run the pipeline on the Preprocessing tab</div>}
+                          {!isValidationComplete && <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"><AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> Validation not passed — run validation check on the Validation tab</div>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-5">
+                      <button
+                        onClick={saveConfiguration}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition-all text-sm"
+                      >
+                        <Save className="w-4 h-4" /> Save Draft
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('upload')}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition-all text-sm"
+                      >
+                        <ArrowLeft className="w-4 h-4" /> Edit Steps
+                      </button>
+                      <button
+                        onClick={handleProceedToTraining}
+                        disabled={!isReadyForTraining || loading}
+                        className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-white font-semibold transition-all text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={isReadyForTraining ? { background: 'linear-gradient(135deg, #7C3AED, #4F46E5)' } : { background: '#9CA3AF' }}
+                      >
+                        {loading ? (
+                          <><RefreshCw className="w-4 h-4 animate-spin" /> Saving…</>
+                        ) : (
+                          <><Play className="w-4 h-4" /> Start ML Training</>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            )}
           </div>
         </div>
         </>
