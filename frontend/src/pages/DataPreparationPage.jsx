@@ -618,6 +618,8 @@ export default function DataPreparationPage() {
   const isPreprocessingComplete = preprocessingStep === 'complete'; // All 4 steps done
   const isFeaturesComplete = featureEngineeringResults !== null;
   const isValidationComplete = validationResults && validationResults.errors === 0;
+  const stepsCompleted = [isUploadComplete, isLabelingComplete, isTargetComplete, isPreprocessingComplete, isFeaturesComplete, finalFeatures.length > 0, isValidationComplete].filter(Boolean).length;
+  const readinessPct = Math.round(stepsCompleted / 7 * 100);
   
   // Save configuration
   const saveConfiguration = () => {
@@ -3124,10 +3126,7 @@ export default function DataPreparationPage() {
             )}
 
             {/* TAB 8: Summary */}
-            {activeTab === 'summary' && selectedBatch && (() => {
-              const stepsCompleted = [isUploadComplete, isLabelingComplete, isTargetComplete, isPreprocessingComplete, isFeaturesComplete, finalFeatures.length > 0, isValidationComplete].filter(Boolean).length;
-              const readinessPct = Math.round(stepsCompleted / 7 * 100);
-              return (
+            {activeTab === 'summary' && selectedBatch && (
               <div className="space-y-5">
 
                 {/* Hero Banner */}
@@ -3369,6 +3368,7 @@ export default function DataPreparationPage() {
                   </div>
                 </div>
               </div>
+            )}
           </div>
         </div>
         </>
