@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import ChatbotWidget from './ChatbotWidget';
 import TrainingStatusBar from './TrainingStatusBar';
+import myAriaLogo from '../assets/myaria-logo.png';
+import arasIntegrasiLogo from '../assets/aras-integrasi-logo.png';
 import {
   LayoutDashboard,
   Database,
@@ -32,6 +34,7 @@ export default function DashboardLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || '{}'));
+  const [logoFailed, setLogoFailed] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
     const saved = localStorage.getItem('sidebarExpanded');
     return saved ? JSON.parse(saved) : false;
@@ -142,32 +145,35 @@ export default function DashboardLayout({ children }) {
               position: 'relative'
             }}
           >
-            <img 
-              src="/Logo/MyAria-I Logo.png" 
-              alt="MyAria-i" 
-              className={sidebarExpanded ? "w-10 h-10" : "w-12 h-12"}
-              style={{ 
-                display: 'block', 
-                objectFit: 'contain',
-                backgroundColor: 'transparent'
-              }}
-              onLoad={() => console.log('[Logo] Successfully loaded')}
-              onError={(e) => {
-                console.error('[Logo] Failed to load from:', e.target.src);
-                console.error('[Logo] Trying absolute path...');
-                // Try absolute path first
-                if (!e.target.src.includes('http')) {
-                  e.target.src = window.location.origin + '/Logo/MyAria-I Logo.png';
-                } else if (!e.target.dataset.fallbackAttempted) {
-                  // If absolute path also failed, show fallback
-                  e.target.dataset.fallbackAttempted = 'true';
-                  const fallback = document.createElement('div');
-                  fallback.style.cssText = 'width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:white;font-size:24px;font-weight:bold;background:linear-gradient(135deg,#A855F7,#7C3AED);border-radius:8px;';
-                  fallback.textContent = 'M';
-                  e.target.parentNode.replaceChild(fallback, e.target);
-                }
-              }}
-            />
+            {logoFailed ? (
+              <div
+                className={sidebarExpanded ? "w-10 h-10" : "w-12 h-12"}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  background: 'linear-gradient(135deg,#A855F7,#7C3AED)',
+                  borderRadius: '8px'
+                }}
+              >
+                M
+              </div>
+            ) : (
+              <img
+                src={myAriaLogo}
+                alt="MyAria-i"
+                className={sidebarExpanded ? "w-10 h-10" : "w-12 h-12"}
+                style={{
+                  display: 'block',
+                  objectFit: 'contain',
+                  backgroundColor: 'transparent'
+                }}
+                onError={() => setLogoFailed(true)}
+              />
+            )}
             
             {/* Hover tooltip when collapsed */}
             {!sidebarExpanded && (
@@ -369,9 +375,9 @@ export default function DashboardLayout({ children }) {
         <footer className="bg-white/60 dark:bg-[#0F0F11] backdrop-blur-sm border-t border-white/40 dark:border-white/[0.06] py-3 px-6 transition-colors">
           <div className="max-w-7xl mx-auto flex items-center justify-center gap-4">
             <span className="text-base text-gray-muted dark:text-gray-400 font-semibold">Powered by</span>
-            <img 
-              src="/Logo/Aras Integrasi - Logo.png" 
-              alt="Aras Integrasi Logo" 
+            <img
+              src={arasIntegrasiLogo}
+              alt="Aras Integrasi Logo"
               className="h-16 object-contain"
             />
           </div>

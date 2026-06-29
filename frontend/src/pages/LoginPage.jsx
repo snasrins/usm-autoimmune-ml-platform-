@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import myAriaLogo from '../assets/myaria-logo.png';
 import { User, Lock, ArrowRight, Check, Copyright } from 'lucide-react';
 import { authAPI } from '../services/api';
 
@@ -71,7 +72,7 @@ export default function LoginPage() {
               
               {/* Logo */}
               <div className="relative z-10 flex items-center gap-3 mb-12">
-                <img src="/Logo/MyAria-I Logo.png" alt="MyAria-i Logo" className="w-16 h-16 object-contain" />
+                <img src={myAriaLogo} alt="MyAria-i Logo" className="w-16 h-16 object-contain" />
                 <span className="font-syne text-2xl font-bold text-white flex items-center gap-2">
                   MyAria-i
                   <Copyright className="w-4 h-4" />
