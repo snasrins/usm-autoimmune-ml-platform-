@@ -107,7 +107,7 @@ class BaseModelTrainingResponse(BaseModel):
 class EnsembleTrainingRequest(BaseModel):
     """Request to train stacking ensemble"""
     dataset_id: str = Field(..., description="Dataset job ID used to train base models")
-    base_model_jobs: List[str] = Field(..., description="List of base model job IDs to include in ensemble")
+    base_model_jobs: List[str] = Field(..., min_length=2, description="List of base model job IDs (minimum 2 required)")
     meta_learner_type: Optional[str] = Field(default='logistic_regression', description="Meta-learner type: logistic_regression, xgboost, lightgbm, random_forest, mlp, ridge, elastic_net")
     target_column: Optional[str] = Field(default='labels_disease_classification', description="Target variable column name")
     batch_id: Optional[str] = Field(default=None, description="Original batch ID for metadata (optional)")
@@ -176,9 +176,15 @@ class TrainedModelInfo(BaseModel):
     test_samples: int
     oof_auc: Optional[float] = None
     test_auc: Optional[float] = None
+    test_precision: Optional[float] = None
+    test_recall: Optional[float] = None
+    test_f1: Optional[float] = None
+    test_accuracy: Optional[float] = None
+    test_specificity: Optional[float] = None
     hyperparameters: Optional[Dict[str, Any]] = None
     feature_count: int
     artifact_path: str  # MinIO path
+    feature_names: Optional[List[str]] = None  # Feature names from training
 
 
 class ModelListResponse(BaseModel):
@@ -231,7 +237,10 @@ class TrainingHistoryItem(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     oof_auc: Optional[float] = None
+    test_auc: Optional[float] = None
+    test_f1: Optional[float] = None
     training_time_seconds: Optional[float] = None
+    dataset_id: Optional[str] = None
     user_id: Optional[int] = None
     username: Optional[str] = None
     user_full_name: Optional[str] = None

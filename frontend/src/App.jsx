@@ -11,7 +11,8 @@ import DataPreparationPage from './pages/DataPreparationPage';
 import DataCleaningPage from './pages/DataCleaningPage';
 import DataCatalogPage from './pages/DataCatalogPage';
 import MLPreparationQueuePage from './pages/MLPreparationQueuePage';
-import DatasetEDAPage from './pages/DatasetEDAPage';
+import EDAWorkbenchPage from './pages/EDAWorkbenchPage';
+import EDADetailPage from './pages/EDADetailPage';
 import DataQualityDetailPage from './pages/DataQualityDetailPage';
 import DataQualityDashboardPage from './pages/DataQualityDashboardPage';
 import TrainingJobsPage from './pages/TrainingJobsPage';
@@ -114,10 +115,34 @@ function App() {
           }
         />
         <Route
-          path="/dataset-eda"
+          path="/ml-preparation/:id"
           element={
             <ProtectedRoute>
-              <DatasetEDAPage />
+              <MLPreparationQueuePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eda-workbench"
+          element={
+            <ProtectedRoute>
+              <EDAWorkbenchPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eda-workbench/:id"
+          element={
+            <ProtectedRoute>
+              <EDAWorkbenchPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/eda-detail/:id"
+          element={
+            <ProtectedRoute>
+              <EDADetailPage />
             </ProtectedRoute>
           }
         />

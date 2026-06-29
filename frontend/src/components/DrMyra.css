@@ -440,11 +440,90 @@
   box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
 }
 
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .message-time {
   font-size: 10px;
   font-weight: 500;
   color: var(--slate-500);
   letter-spacing: 0.02em;
+}
+
+/* Model badge on messages */
+.msg-model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.msg-model-badge.gemma {
+  background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(167,139,250,0.12));
+  color: var(--purple-primary);
+  border: 1px solid rgba(139,92,246,0.2);
+}
+.msg-model-badge.fallback {
+  background: rgba(100,116,139,0.1);
+  color: var(--slate-500);
+  border: 1px solid rgba(100,116,139,0.2);
+}
+
+/* Header status model badges */
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+}
+.model-badge.gemma {
+  background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(167,139,250,0.15));
+  color: var(--purple-primary);
+  border: 1px solid rgba(139,92,246,0.25);
+}
+.model-badge.fallback {
+  background: rgba(100,116,139,0.1);
+  color: var(--slate-500);
+  border: 1px solid rgba(100,116,139,0.2);
+}
+
+/* Suggestion chips */
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px 8px;
+}
+.suggestion-chip {
+  background: rgba(139,92,246,0.07);
+  border: 1px solid rgba(139,92,246,0.2);
+  border-radius: 100px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--purple-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  letter-spacing: -0.01em;
+}
+.suggestion-chip:hover {
+  background: rgba(139,92,246,0.14);
+  border-color: rgba(139,92,246,0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(139,92,246,0.15);
 }
 
 /* Typing Indicator */

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronRight, Upload, Download, Brain, Sparkles, Info, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
+import ModelingStepsNav from '../components/ModelingStepsNav';
 
 const SHAP_FEATURE_DATA = [
   { feature: 'CRP_high', value: 1.5, shap: 0.18, direction: 'high' },
@@ -91,6 +92,7 @@ export default function ModelExplainabilityPage() {
 
   return (
     <DashboardLayout>
+      <ModelingStepsNav />
       <div className="h-[70px] flex items-center gap-8 px-6 bg-white/85 border-b border-violet-100 backdrop-blur-md">
         <div className="flex flex-col gap-1">
           <h1 className="font-syne text-[18px] font-bold text-[#0F0F11] leading-none">Model Explainability</h1>

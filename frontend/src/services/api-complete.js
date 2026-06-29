@@ -665,8 +665,25 @@ export const explainabilityAPI = {
    * @returns {Promise<{base_value: number, shap_values: object, waterfall_plot: string}>}
    */
   getSHAPExplanation: async (modelId, patientData, topK = 10) => {
-    const response = await api.post('/explainability/explain', {
+    const response = await api.post('/ml/explain', {
       model_name: modelId,
+      patient_data: patientData,
+      top_k: topK,
+      generate_plot: true
+    });
+    return response.data;
+  },
+
+  /**
+   * Get SHAP explanation using a training job ID (recommended)
+   * @param {string} jobId - Training job ID from models/list (model_id field)
+   * @param {object} patientData - Patient features
+   * @param {number} topK - Number of top features
+   * @returns {Promise<SHAPExplanationResponse>}
+   */
+  getSHAPByJobId: async (jobId, patientData, topK = 10) => {
+    const response = await api.post('/ml/explain/by-job', {
+      job_id: jobId,
       patient_data: patientData,
       top_k: topK,
       generate_plot: true
@@ -680,7 +697,7 @@ export const explainabilityAPI = {
    * @returns {Promise<{feature_importance: array}>}
    */
   getGlobalFeatureImportance: async (modelId) => {
-    const response = await api.get(`/explainability/global-importance/${modelId}`);
+    const response = await api.get(`/ml/global-importance/${modelId}`);
     return response.data;
   },
 
@@ -692,12 +709,13 @@ export const explainabilityAPI = {
    * @returns {Promise<{explanation: string, key_factors: array, recommendations: array}>}
    */
   generateLLMExplanation: async (modelId, patientData, detailLevel = 'moderate') => {
-    const response = await api.post('/explainability/llm-explain', {
-      model_id: modelId,
-      patient_data: patientData,
-      detail_level: detailLevel,
-      include_clinical_context: true,
-      include_recommendations: true
+    const response = await api.post('/ml/explain-prediction-nl', {
+      prediction_result: {
+        model_id: modelId,
+        detail_level: detailLevel,
+        patient_data: patientData,
+      },
+      shap_explanation: null,
     });
     return response.data;
   },

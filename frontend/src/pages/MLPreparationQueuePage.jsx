@@ -5,8 +5,8 @@
  * Replaces the redundant "Validation" tab
  */
 
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Upload, Search, Filter, Eye, Edit3, Trash2, Play, Database,
@@ -20,6 +20,8 @@ import { authAPI } from '../services/api';
 
 export default function MLPreparationQueuePage() {
   const navigate = useNavigate();
+  const { id: highlightId } = useParams();
+  const highlightRef = useRef(null);
   const [user, setUser] = useState(null);
   
   // Load user data
@@ -27,7 +29,6 @@ export default function MLPreparationQueuePage() {
     const loadUser = async () => {
       try {
         const userData = await authAPI.getCurrentUser();
-        console.log('[ML Queue] Current user:', userData);
         setUser(userData);
       } catch (error) {
         console.error('Failed to load user:', error);
@@ -43,14 +44,22 @@ export default function MLPreparationQueuePage() {
   
   useEffect(() => {
     fetchDatasets();
+    // Auto-refresh every 30s so status updates (ml_ready) are visible without manual reload
+    const interval = setInterval(fetchDatasets, 30000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Scroll highlighted dataset into view when datasets load
+  useEffect(() => {
+    if (highlightId && highlightRef.current) {
+      setTimeout(() => highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+    }
+  }, [highlightId, datasets.length]);
   
   const fetchDatasets = async () => {
     setLoading(true);
     try {
       const response = await flexibleAPI.getRecentUploads(100, true, true);
-      console.log('[ML Queue] Datasets loaded:', response.uploads?.length, 'datasets');
-      console.log('[ML Queue] Sample dataset:', response.uploads?.[0]);
       setDatasets(response.uploads || []);
     } catch (error) {
       console.error('Failed to fetch datasets:', error);
@@ -60,33 +69,41 @@ export default function MLPreparationQueuePage() {
     }
   };
   
-  // A dataset is ML-prepped if it has gone through the ML preparation workflow
-  const isMLPrepped = (d) =>
-    d.status === 'saved' ||
-    d.ml_prep_status === 'ready' ||
-    d.ml_prep_status === 'completed';
-
-  const isProcessing = (d) =>
-    d.status === 'processing' ||
-    d.ml_prep_status === 'processing';
-
   const filteredDatasets = datasets.filter(dataset => {
     const matchesSearch = dataset.file_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          dataset.uploaded_by?.toLowerCase().includes(searchQuery.toLowerCase());
-    let matchesStatus = false;
-    if (statusFilter === 'all')        matchesStatus = true;
-    else if (statusFilter === 'ml-ready')     matchesStatus = isMLPrepped(dataset);
-    else if (statusFilter === 'needs-prep')   matchesStatus = !isMLPrepped(dataset) && !isProcessing(dataset);
-    else if (statusFilter === 'processing')   matchesStatus = isProcessing(dataset);
+    const matchesStatus = statusFilter === 'all' || dataset.ml_prep_status === statusFilter;
     return matchesSearch && matchesStatus;
   });
   
   const stats = {
     total: datasets.length,
-    mlReady: datasets.filter(isMLPrepped).length,
-    needsPrep: datasets.filter(d => !isMLPrepped(d) && !isProcessing(d)).length,
-    processing: datasets.filter(isProcessing).length,
+    ready: datasets.filter(d => d.ml_prep_status === 'ml_ready').length,
+    inProgress: datasets.filter(d => d.ml_prep_status === 'in_progress').length,
     totalRecords: datasets.reduce((sum, d) => sum + (d.row_count || 0), 0)
+  };
+
+  // 2-letter initials from full name (same logic as DataPipeline)
+  const getInitials = (name) => {
+    if (!name) return 'U?';
+    const parts = name.trim().split(/[_\s]+/);
+    if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  // Consistent gradient based on username hash (same palette as DataPipeline)
+  const getAvatarColor = (name) => {
+    const colors = [
+      'from-purple-200 to-purple-300',
+      'from-violet-200 to-violet-300',
+      'from-indigo-200 to-indigo-300',
+      'from-blue-200 to-blue-300',
+      'from-pink-200 to-purple-300',
+      'from-blue-200 to-indigo-300',
+    ];
+    let hash = 0;
+    for (let i = 0; i < (name || '').length; i++) hash = (name.charCodeAt(i) + ((hash << 5) - hash));
+    return colors[Math.abs(hash) % colors.length];
   };
   
   const handleDelete = async (datasetId) => {
@@ -120,27 +137,28 @@ export default function MLPreparationQueuePage() {
     });
   };
   
-  const handleTrain = (datasetId) => navigate('/training', { state: { datasetId } });
+  const handleTrain = (datasetId) => navigate('/training', { state: { dataset_id: datasetId } });
   
   const handleView = (datasetId, status) => {
-    // Find the dataset to pass full info
-    const dataset = datasets.find(d => d.id === datasetId);
-    
-    // Navigate to EDA page for comprehensive data exploration
-    navigate('/dataset-eda', { 
-      state: { 
-        datasetId: dataset?.id || datasetId,
-        datasetName: dataset?.file_name || 'Dataset'
-      } 
-    });
+    if (status === 'preview') navigate('/data-pipeline', { state: { sessionId: datasetId } });
+    else navigate(`/eda-detail/${datasetId}`);
   };
   
   const getStatusBadge = (dataset) => {
-    if (isMLPrepped(dataset))
-      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">ML-Ready</span>;
-    if (isProcessing(dataset))
-      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 border border-blue-200">Processing</span>;
-    return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-700 border border-amber-200">Needs Preparation</span>;
+    if (dataset.ml_prep_status === 'ml_ready')
+      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">✓ ML-Ready</span>;
+    if (dataset.ml_prep_status === 'in_progress') {
+      const labeled = dataset.labeled_count || 0;
+      const total = dataset.row_count || 0;
+      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">Labeling {labeled}/{total}</span>;
+    }
+    // Preprocessed = went through data pipeline but not yet labeled
+    const name = dataset.file_name || '';
+    if (name.toLowerCase().startsWith('preprocessed session') || name.toLowerCase().startsWith('preprocessed_session')) {
+      return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-700">Preprocessed</span>;
+    }
+    // Raw upload not yet touched
+    return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">Needs Preparation</span>;
   };
   
   const formatDate = (dateString) => {
@@ -190,26 +208,26 @@ export default function MLPreparationQueuePage() {
                   <CheckCircle className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-right">
-                  <div className="text-3xl font-bold text-gray-900">{stats.mlReady}</div>
-                  <div className="text-xs text-green-600 font-medium mt-1">Prepared</div>
+                  <div className="text-3xl font-bold text-gray-900">{stats.ready}</div>
+                  <div className="text-xs text-green-600 font-medium mt-1">↑ 7%</div>
                 </div>
               </div>
-              <div className="text-sm font-semibold text-gray-700">ML-Ready</div>
-              <div className="text-xs text-gray-500 mt-0.5">Completed ML prep</div>
+              <div className="text-sm font-semibold text-gray-700">Ready for ML</div>
+              <div className="text-xs text-gray-500 mt-0.5">vs last month</div>
             </div>
             
             <div className="bg-white rounded-2xl p-6 border border-gray-200/60 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all">
               <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-md">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-md">
                   <Clock className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-right">
-                  <div className="text-3xl font-bold text-gray-900">{stats.needsPrep}</div>
-                  <div className="text-xs text-amber-600 font-medium mt-1">Unprepared</div>
+                  <div className="text-3xl font-bold text-gray-900">{stats.preview}</div>
+                  <div className="text-xs text-green-600 font-medium mt-1">↑ 5%</div>
                 </div>
               </div>
-              <div className="text-sm font-semibold text-gray-700">Needs Preparation</div>
-              <div className="text-xs text-gray-500 mt-0.5">Awaiting ML prep</div>
+              <div className="text-sm font-semibold text-gray-700">In Processing</div>
+              <div className="text-xs text-gray-500 mt-0.5">vs last month</div>
             </div>
             
             <div className="bg-white rounded-2xl p-6 border border-gray-200/60 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all">
@@ -260,14 +278,11 @@ export default function MLPreparationQueuePage() {
                   <button onClick={() => setStatusFilter('all')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'all' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-600'}`}>
                     All ({stats.total})
                   </button>
-                  <button onClick={() => setStatusFilter('ml-ready')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'ml-ready' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-600'}`}>
-                    ML-Ready ({stats.mlReady})
+                  <button onClick={() => setStatusFilter('ml_ready')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'ml_ready' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-600'}`}>
+                    Ready ({stats.ready})
                   </button>
-                  <button onClick={() => setStatusFilter('needs-prep')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'needs-prep' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-600'}`}>
-                    Needs Preparation ({stats.needsPrep})
-                  </button>
-                  <button onClick={() => setStatusFilter('processing')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'processing' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600'}`}>
-                    Processing ({stats.processing})
+                  <button onClick={() => setStatusFilter('in_progress')} className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors whitespace-nowrap ${statusFilter === 'in_progress' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-600'}`}>
+                    In Progress ({stats.inProgress})
                   </button>
                 </div>
                 
@@ -293,7 +308,7 @@ export default function MLPreparationQueuePage() {
                 <FolderOpen className="w-20 h-20 mb-4 text-gray-300" />
                 <p className="text-lg font-semibold">No datasets found</p>
                 <p className="text-sm mt-1 mb-4">Upload data to get started</p>
-                <button onClick={() => navigate('/data-preparation')} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium">
+                <button onClick={() => navigate('/data-pipeline')} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium">
                   Upload New Data
                 </button>
               </div>
@@ -313,7 +328,7 @@ export default function MLPreparationQueuePage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {filteredDatasets.map((dataset, idx) => (
-                      <motion.tr key={dataset.id} className="hover:bg-gray-50 transition-colors" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: idx * 0.03 }}>
+                      <motion.tr key={dataset.id} ref={dataset.id === highlightId ? highlightRef : null} className={`hover:bg-gray-50 transition-colors ${dataset.id === highlightId ? 'ring-2 ring-purple-400 bg-purple-50/40' : ''}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, delay: idx * 0.03 }}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
@@ -333,10 +348,15 @@ export default function MLPreparationQueuePage() {
                         <td className="px-6 py-4 text-sm font-semibold text-gray-900">{(dataset.row_count || 0).toLocaleString()}</td>
                         <td className="px-6 py-4 text-sm text-gray-600">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
-                              {(dataset.uploaded_by || 'U')[0].toUpperCase()}
+                            <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(dataset.uploaded_by)} flex items-center justify-center text-purple-700 text-xs font-bold flex-shrink-0 ${!dataset.is_owner ? 'opacity-75' : ''}`}>
+                              {getInitials(dataset.uploaded_by || 'Unknown')}
                             </div>
-                            <span>{dataset.uploaded_by || 'Unknown'}</span>
+                            <div className="flex flex-col">
+                              <span className="text-sm text-gray-900 font-medium">{dataset.uploaded_by || 'Unknown'}</span>
+                              {!dataset.is_owner && (
+                                <span className="text-xs text-gray-500">Other Team Member</span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">{formatDate(dataset.uploaded_at)}</td>
@@ -347,25 +367,30 @@ export default function MLPreparationQueuePage() {
                               <Eye size={16} />
                             </button>
                             
-                            {/* ML Prep Button - only for own datasets */}
-                            {(dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
-                              <button onClick={() => handleMLPrep(dataset)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Start ML Preparation">
-                                <Play size={16} className="fill-blue-600" />
-                              </button>
+                            {!dataset.is_owner && (
+                              <span className="px-2 py-1 text-[10px] font-medium text-gray-400 bg-gray-100 rounded-md" title="You can only view this dataset">
+                                View only
+                              </span>
                             )}
                             
-                            {/* Train Button - only for ML-prepped datasets + own datasets */}
-                            {isMLPrepped(dataset) && (dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
-                              <button onClick={() => handleTrain(dataset.id)} className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Start ML Training">
-                                <Play size={16} />
-                              </button>
-                            )}
-                            
-                            {/* Delete Button - only for own datasets */}
-                            {(dataset.is_owner || (user && dataset && (String(user.id) === String(dataset.user_id) || String(user.id) === String(dataset.uploaded_by_id) || user.username === dataset.uploaded_by))) && (
-                              <button onClick={() => handleDelete(dataset.id)} className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Dataset">
-                                <Trash2 size={16} />
-                              </button>
+                            {/* ML Prep and Delete - only for owners */}
+                            {dataset.is_owner && (
+                              <>
+                                <button onClick={() => handleMLPrep(dataset)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Start ML Preparation">
+                                  <Play size={16} className="fill-blue-600" />
+                                </button>
+                                
+                                {/* Train Button - only for ml_ready datasets */}
+                                {dataset.ml_prep_status === 'ml_ready' && (
+                                  <button onClick={() => handleTrain(dataset.id)} className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Start ML Training">
+                                    <Play size={16} />
+                                  </button>
+                                )}
+                                
+                                <button onClick={() => handleDelete(dataset.id)} className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Dataset">
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>

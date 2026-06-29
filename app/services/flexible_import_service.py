@@ -178,7 +178,9 @@ class FlexibleImportService:
         self,
         session_id: uuid.UUID,
         dataset_source: Optional[str] = None,
-        preprocessing_metadata: Optional[Dict[str, Any]] = None
+        preprocessing_metadata: Optional[Dict[str, Any]] = None,
+        final_dataset_name: Optional[str] = None,
+        excluded_columns: Optional[list] = None
     ) -> Dict[str, Any]:
         """
         Move data from staging to flexible_dataset_wide table
@@ -210,7 +212,7 @@ class FlexibleImportService:
         # Get first record to determine dataset type
         first_record = staging_records[0]
         dataset_type = first_record.dataset_type
-        dataset_name = first_record.dataset_name
+        dataset_name = final_dataset_name or first_record.dataset_name
         
         # Get schema
         schema_record = self.db.query(DatasetSchema).filter(
@@ -231,8 +233,13 @@ class FlexibleImportService:
         # Process each record
         for staging in staging_records:
             try:
+                # Strip excluded columns from row data before any processing
+                row_data = staging.row_data
+                if excluded_columns:
+                    row_data = {k: v for k, v in row_data.items() if k not in excluded_columns}
+
                 # Extract record ID
-                record_id = self._extract_record_id(staging.row_data, schema_record)
+                record_id = self._extract_record_id(row_data, schema_record)
                 
                 # Check for duplicates
                 existing = self.db.query(FlexibleDatasetWide).filter(
@@ -247,14 +254,14 @@ class FlexibleImportService:
                     continue
                 
                 # Organize data into structured JSONB
-                organized_data = self._organize_data(staging.row_data, schema_record)
+                organized_data = self._organize_data(row_data, schema_record)
                 
                 # Add preprocessing metadata if provided
                 if preprocessing_metadata:
                     organized_data['_preprocessing_applied'] = preprocessing_metadata
                 
                 # Calculate data quality score
-                quality_score = self._calculate_quality_score(staging.row_data, schema_record)
+                quality_score = self._calculate_quality_score(row_data, schema_record)
                 
                 # Create permanent record
                 wide_record = FlexibleDatasetWide(
@@ -267,7 +274,7 @@ class FlexibleImportService:
                     import_batch_id=batch_id,
                     import_method='csv_upload',
                     data_quality_score=quality_score,
-                    missing_fields_count=self._count_missing(staging.row_data),
+                    missing_fields_count=self._count_missing(row_data),
                     created_by=self.user_id
                 )
                 

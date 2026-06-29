@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { ChevronRight, Brain, Sparkles, Info, RefreshCw, Download, AlertCircle, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
+import ModelingStepsNav from '../components/ModelingStepsNav';
 import PageHeader from '../components/PageHeader';
 import { explainabilityAPI } from '../services/api-complete';
 import { authAPI } from '../services/api';
+import api from '../services/api';
 
 export default function ModelExplainabilityPageConnected() {
   const [user, setUser] = useState(null);
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
+  const [selectedModelFeatures, setSelectedModelFeatures] = useState([]);
   const [tab, setTab] = useState('single');
   const [patientData, setPatientData] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
@@ -35,17 +38,35 @@ export default function ModelExplainabilityPageConnected() {
 
   const loadModels = async () => {
     try {
-      // Fetch trained models from backend
-      // For now, mock data - replace with actual API call
-      setModels([
-        { id: 'xgboost_v1', name: 'XGBoost v1.0', type: 'xgboost', version: 'v1' },
-        { id: 'lightgbm_v1', name: 'LightGBM v1.0', type: 'lightgbm', version: 'v1' },
-        { id: 'ensemble_v1', name: 'Stacking Ensemble v1.0', type: 'ensemble', version: 'v1' },
-      ]);
-      setSelectedModel('xgboost_v1');
+      const response = await api.get('/ml/models/list');
+      const data = response.data;
+      const modelList = (data.models || []).map(m => {
+        const aucStr = m.test_auc ? ` — AUC ${(m.test_auc * 100).toFixed(1)}%` : '';
+        const typeTag = m.model_type === 'ensemble' ? '🔵 Ensemble' : '⚙️ Base';
+        return {
+          id: m.model_id,
+          name: `${m.model_name} (${typeTag}${aucStr})`,
+          type: m.model_name,
+          version: m.version,
+          model_type: m.model_type,
+          feature_names: m.feature_names || [],
+        };
+      });
+      if (modelList.length === 0) {
+        setError('No trained models found. Complete training first.');
+        return;
+      }
+      setModels(modelList);
+      setSelectedModel(modelList[0].id);
+      // Auto-populate feature template for first model
+      if (modelList[0].feature_names?.length > 0) {
+        const template = Object.fromEntries(modelList[0].feature_names.map(f => [f, 0]));
+        setPatientData(template);
+        setSelectedModelFeatures(modelList[0].feature_names);
+      }
     } catch (err) {
       console.error('Error loading models:', err);
-      setError('Failed to load models');
+      setError('Failed to load trained models. ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -59,11 +80,9 @@ export default function ModelExplainabilityPageConnected() {
     setError(null);
 
     try {
-      const model = models.find(m => m.id === selectedModel);
-      
-      // Call SHAP API
-      const result = await explainabilityAPI.getSHAPExplanation(
-        model.type,
+      // Use job-id based SHAP endpoint with the real model artifact path
+      const result = await explainabilityAPI.getSHAPByJobId(
+        selectedModel,
         patientData,
         10 // top_k features
       );
@@ -127,8 +146,9 @@ export default function ModelExplainabilityPageConnected() {
   return (
     <DashboardLayout>
       <PageHeader title="Model Explainability" subtitle="Explainability (SHAP + AI)" user={user} />
+      <ModelingStepsNav />
 
-      <main className="flex-1 overflow-y-auto p-6" style={{ zoom: 0.78, background: '#FAFBFC' }}>
+      <main className="flex-1 overflow-y-auto p-6 bg-gradient-to-br from-[#f5f3ff] via-[#faf9fc] to-[#f0edff]" style={{ zoom: 0.9 }}>
         <div className="max-w-7xl mx-auto space-y-6">
           
           {/* Error Display */}
@@ -151,13 +171,26 @@ export default function ModelExplainabilityPageConnected() {
                 <label className="text-sm font-semibold text-gray-700">Select Model</label>
                 <select
                   value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedModel(e.target.value);
+                    const m = models.find(x => x.id === e.target.value);
+                    if (m?.feature_names?.length > 0) {
+                      const template = Object.fromEntries(m.feature_names.map(f => [f, 0]));
+                      setPatientData(template);
+                      setSelectedModelFeatures(m.feature_names);
+                    }
+                  }}
                   className="w-full mt-1 rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 >
                   {models.map(model => (
                     <option key={model.id} value={model.id}>{model.name}</option>
                   ))}
                 </select>
+                {selectedModelFeatures.length > 0 && (
+                  <p className="text-xs text-violet-600 mt-1">
+                    ✓ {selectedModelFeatures.length} features loaded — edit values below
+                  </p>
+                )}
               </div>
 
               <div>
@@ -198,7 +231,9 @@ export default function ModelExplainabilityPageConnected() {
 }`}
               />
               <p className="text-xs text-gray-500 mt-1">
-                Enter patient feature values as JSON. Feature names must match training data columns.
+                {selectedModelFeatures.length > 0
+                  ? `Feature names are auto-loaded from the model. Replace the 0 values with real patient measurements.`
+                  : `Enter patient feature values as JSON. Feature names must match training data columns.`}
               </p>
             </div>
 

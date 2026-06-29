@@ -28,11 +28,15 @@ import {
   XCircle,
   PlayCircle,
   Users,
-  X
+  X,
+  ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  FolderOpen
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import ModelingStepsNav from '../components/ModelingStepsNav';
 import PageHeader from '../components/PageHeader';
-import EnsembleTrainingDialog from '../components/EnsembleTrainingDialog';
 import { authAPI } from '../services/api';
 import { mlPreparationAPI, trainingAPI } from '../services/api-complete';
 import { flexibleAPI } from '../services/api';
@@ -74,6 +78,8 @@ export default function TrainingJobsPage() {
   
   // State management
   const [showNewRunDialog, setShowNewRunDialog] = useState(false);
+  const [expandedActiveJobs, setExpandedActiveJobs] = useState(new Set());
+  const [expandedHistoryJobs, setExpandedHistoryJobs] = useState(new Set());
   const [selectedModels, setSelectedModels] = useState([]);
   const [trainingRuns, setTrainingRuns] = useState([]);
   const [activeRun, setActiveRun] = useState(null);
@@ -84,6 +90,18 @@ export default function TrainingJobsPage() {
   const [showEnsembleDialog, setShowEnsembleDialog] = useState(false);
   const [isTrainingEnsemble, setIsTrainingEnsemble] = useState(false);
   const [ensembleStatus, setEnsembleStatus] = useState('');
+
+  // Training history state
+  const [trainingHistory, setTrainingHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [expandedSessions, setExpandedSessions] = useState(new Set(['session-0']));  // open newest by default
+  const [historyPage, setHistoryPage] = useState(1);
+  const SESSIONS_PER_PAGE = 5;
+  const [historySearch, setHistorySearch] = useState('');
+  // History ensemble state
+  const [historyEnsembleSession, setHistoryEnsembleSession] = useState(null);
+  const [historyEnsembleLoading, setHistoryEnsembleLoading] = useState(false);
+  const [historyEnsembleJobs, setHistoryEnsembleJobs] = useState({});
   
   // Loading states for better UX
   const [isPreparingDataset, setIsPreparingDataset] = useState(false);
@@ -118,6 +136,8 @@ export default function TrainingJobsPage() {
       if (location.state.target_column) {
         sessionStorage.setItem('current_target_column', location.state.target_column);
       }
+      // Auto-open the wizard when navigated from ML Queue
+      setShowNewRunDialog(true);
       return; // Skip sessionStorage check if we have navigation state
     }
     
@@ -151,63 +171,55 @@ export default function TrainingJobsPage() {
   // Dataset selection
   const [availableDatasets, setAvailableDatasets] = useState([]);
   const [selectedDataset, setSelectedDataset] = useState(null);
-  const [showDatasetSelector, setShowDatasetSelector] = useState(false);
+  const [datasetPage, setDatasetPage] = useState(1);  // for "load more"
+  const DATASET_PAGE_SIZE = 10;
 
-  // Fetch available datasets (include staging so labeled staging data can be trained)
+  // Fetch available datasets — default to 10 most recent
   useEffect(() => {
     const fetchDatasets = async () => {
       try {
         console.log('[Training] Fetching datasets...');
-        // Include both staging and saved data - users can train on staging data after labeling
         const response = await flexibleAPI.getRecentUploads(50, true, true);
         console.log('[Training] Got uploads:', response.uploads?.length || 0);
         
         if (!response.uploads || response.uploads.length === 0) {
-          console.log('[Training] No uploads found');
           setAvailableDatasets([]);
           return;
         }
         
-        // Simple transformation without fetching labeling stats (for now)
-        // User can see all datasets and select manually
         const datasets = response.uploads
           .filter(upload => upload.row_count > 0)
+          // sort newest first
+          .sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at))
           .map(upload => ({
             batch_id: upload.id,
             original_filename: upload.file_name,
             uploaded_at: upload.uploaded_at,
             record_count: upload.row_count || 0,
-            labeled_count: upload.row_count || 0, // Assume all labeled for now
+            labeled_count: upload.row_count || 0,
             dataset_type: upload.dataset_type || 'General',
             source: upload.source || 'Upload',
-            is_staging: upload.source === 'staging'  // Track if staging
+            is_staging: upload.source === 'staging',
+            isToday: new Date(upload.uploaded_at).toDateString() === new Date().toDateString(),
           }));
         
         console.log('[Training] Datasets transformed:', datasets.length);
         setAvailableDatasets(datasets);
         
-        // Auto-select dataset: Priority - navigation state > sessionStorage > first available
+        // Auto-select: navigation state > sessionStorage > newest (first in sorted list)
         const targetBatchId = location.state?.dataset_id || 
                               sessionStorage.getItem('current_batch_id') || 
                               config.batchId;
         
         if (targetBatchId && datasets.length > 0) {
-          const matchingDataset = datasets.find(d => d.batch_id === targetBatchId);
-          if (matchingDataset) {
-            console.log('[Training] Auto-selecting dataset from ML Prep:', matchingDataset.original_filename);
-            setSelectedDataset(matchingDataset);
-          } else {
-            console.log('[Training] Target batch not found, selecting first dataset');
-            setSelectedDataset(datasets[0]);
-          }
+          const match = datasets.find(d => d.batch_id === targetBatchId);
+          setSelectedDataset(match || datasets[0]);
         } else if (datasets.length > 0 && !selectedDataset) {
-          console.log('[Training] Auto-selecting first dataset:', datasets[0].original_filename);
-          setSelectedDataset(datasets[0]);
+          setSelectedDataset(datasets[0]);  // always default to newest
         }
         
       } catch (error) {
         console.error('[Training] Error fetching datasets:', error);
-        console.error('[Training] Error stack:', error.stack);
         setAvailableDatasets([]);
       }
     };
@@ -257,8 +269,10 @@ export default function TrainingJobsPage() {
         // Save to sessionStorage for persistence
         sessionStorage.setItem('active_training_run', JSON.stringify(updatedRun));
         
-        // If all jobs completed, store model IDs and clear active run
-        if (allCompleted) {
+        // Check if all non-ensemble jobs done, AND if ensemble exists it's also terminal
+        const hasEnsemble = !!updatedJobs['ensemble'];
+        const ensembleTerminal = !hasEnsemble || ['completed', 'failed'].includes(updatedJobs['ensemble']?.status);
+        if (allCompleted && ensembleTerminal) {
           const completedModelIds = Object.entries(updatedJobs)
             .filter(([_, job]) => job.status === 'completed' && job.result?.model_id)
             .map(([_, job]) => job.result.model_id);
@@ -272,6 +286,8 @@ export default function TrainingJobsPage() {
           // Clear active run after brief delay to show completion
           setTimeout(() => {
             sessionStorage.removeItem('active_training_run');
+            setActiveRun(null);
+            refreshHistory(); // auto-refresh history list after run finishes
           }, 5000);
         }
       } catch (error) {
@@ -281,6 +297,36 @@ export default function TrainingJobsPage() {
     
     return () => clearInterval(interval);
   }, [activeRun]);
+
+  // Fetch training history on mount
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setLoadingHistory(true);
+      try {
+        const data = await trainingAPI.getTrainingHistory(100);
+        const jobs = (data.jobs || []).filter(j => j.job_type === 'base_model' || j.job_type === 'base_model_training');
+        setTrainingHistory(jobs);
+      } catch (error) {
+        console.error('[Training] Failed to fetch history:', error);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    fetchHistory();
+  }, []);
+
+  const refreshHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const data = await trainingAPI.getTrainingHistory(100);
+      const jobs = (data.jobs || []).filter(j => j.job_type === 'base_model' || j.job_type === 'base_model_training');
+      setTrainingHistory(jobs);
+    } catch (error) {
+      console.error('[Training] Failed to refresh history:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   // Toggle model selection
   const toggleModel = (modelId) => {
@@ -465,15 +511,25 @@ export default function TrainingJobsPage() {
       });
       
       console.log('[Ensemble] Ensemble training started:', response.job_id);
-      setEnsembleStatus('Ensemble training job started successfully!');
       
-      // Close dialog and show success message
-      setTimeout(() => {
-        setShowEnsembleDialog(false);
-        setIsTrainingEnsemble(false);
-        setEnsembleStatus('');
-        alert(`Ensemble training started! Job ID: ${response.job_id}\n\nThe ensemble will combine ${baseModelJobs.length} base models using ${ensembleConfig.metaLearnerType} meta-learner.`);
-      }, 1500);
+      // Add ensemble job to activeRun so the polling loop tracks it
+      const ensembleJob = {
+        job_id: response.job_id,
+        model_name: 'ensemble',
+        status: 'queued',
+        progress: 0,
+        result: null
+      };
+      const updatedRun = {
+        ...activeRun,
+        jobs: { ...activeRun.jobs, ensemble: ensembleJob }
+      };
+      setActiveRun(updatedRun);
+      sessionStorage.setItem('active_training_run', JSON.stringify(updatedRun));
+      
+      setShowEnsembleDialog(false);
+      setIsTrainingEnsemble(false);
+      setEnsembleStatus('');
       
     } catch (error) {
       console.error('[Ensemble] Failed to start ensemble training:', error);
@@ -487,10 +543,41 @@ export default function TrainingJobsPage() {
     }
   };
 
+  // Start ensemble training from a history session (not an active run)
+  const startHistoryEnsemble = async (session, ensembleConfig) => {
+    setHistoryEnsembleLoading(true);
+    try {
+      const baseModelJobIds = session.jobs
+        .filter(j => j.job_type === 'base_model' && j.status === 'completed')
+        .map(j => j.job_id);
+      const response = await trainingAPI.trainEnsemble({
+        datasetId: session.datasetId,
+        baseModelJobs: baseModelJobIds,
+        metaLearnerType: ensembleConfig.metaLearnerType || 'logistic_regression',
+        batchId: session.datasetId,
+      });
+      setHistoryEnsembleJobs(prev => ({
+        ...prev,
+        [session.key]: { jobId: response.job_id, status: 'running' }
+      }));
+      setHistoryEnsembleSession(null);
+      // Refresh history at intervals to catch completion
+      setTimeout(() => refreshHistory(), 8000);
+      setTimeout(() => refreshHistory(), 30000);
+      setTimeout(() => refreshHistory(), 90000);
+    } catch (error) {
+      const msg = error.response?.data?.detail || error.message;
+      alert(`Failed to start ensemble: ${msg}`);
+    } finally {
+      setHistoryEnsembleLoading(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <PageHeader title="Training Jobs" subtitle="Training" user={user} />
-      <div className="h-screen flex flex-col" style={{ zoom: 0.78, background: '#FAFBFC' }}>
+      <ModelingStepsNav />
+      <div className="h-screen flex flex-col" style={{ zoom: 0.75, background: '#FAFBFC' }}>
 
         {/* Stats Bar */}
         {activeRun && (
@@ -520,19 +607,33 @@ export default function TrainingJobsPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <button
+                      onClick={() => {
+                        setActiveRun(null);
+                        sessionStorage.removeItem('active_training_run');
+                        setShowNewRunDialog(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-primary text-purple-primary hover:bg-purple-dim transition-colors text-xs font-medium"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      New Run
+                    </button>
+                    <button
                       onClick={() => window.location.reload()}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors text-xs text-gray-muted"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                       Refresh
                     </button>
-                    {completedModels.length >= 3 && (
+                    {completedModels.length >= 3 && !activeRun.jobs['ensemble'] && (
                       <button
-                        onClick={() => setShowEnsembleDialog(true)}
+                        onClick={() => {
+                          // Scroll down to the inline EnsembleSection
+                          document.querySelector('[data-ensemble-section]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-primary to-blue-500 text-white hover:opacity-90 transition-opacity text-xs font-medium"
                       >
                         <Layers className="w-3.5 h-3.5" />
-                        Train Ensemble ({completedModels.length} models)
+                        Train Ensemble ({completedModels.length} models) ↓
                       </button>
                     )}
                     {completedModels.length >= 1 && (
@@ -553,74 +654,283 @@ export default function TrainingJobsPage() {
                       key={modelId}
                       job={job}
                       modelInfo={AVAILABLE_MODELS.find(m => m.id === modelId)}
+                      isExpanded={expandedActiveJobs.has(modelId)}
+                      onToggle={() => setExpandedActiveJobs(prev => {
+                        const next = new Set(prev);
+                        next.has(modelId) ? next.delete(modelId) : next.add(modelId);
+                        return next;
+                      })}
                     />
                   ))}
+
+                  {/* Inline Ensemble Section — appears once ≥2 base models complete */}
+                  {completedModels.length >= 2 && !activeRun.jobs['ensemble'] && (
+                    <div data-ensemble-section>
+                    <EnsembleSection
+                      completedModels={completedModels}
+                      activeRun={activeRun}
+                      onStart={startEnsembleTraining}
+                      isLoading={isTrainingEnsemble}
+                    />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Empty State */}
+            {/* No Active Run Banner */}
             {!activeRun && (
-              <div className="bg-gradient-to-br from-purple-primary/5 to-purple-primary/10 border-2 border-dashed border-purple-primary/30 rounded-2xl p-12 text-center">
-                <Brain className="w-16 h-16 text-purple-primary/40 mx-auto mb-4" />
-                <h3 className="font-syne text-lg font-bold text-black-text mb-2">
-                  No Active Training Runs
-                </h3>
-                <p className="text-sm text-gray-muted mb-6 max-w-md mx-auto">
-                  Start a new training run to experiment with different ML algorithms and compare their performance
-                </p>
-                <button
-                  onClick={() => setShowDatasetSelector(true)}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 transition-colors text-sm font-medium"
-                >
-                  <Plus className="w-4 h-4" />
-                  Start Your First Training Run
-                </button>
+              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-purple-dim flex items-center justify-center">
+                      <Brain className="w-5 h-5 text-purple-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-syne text-sm font-bold text-black-text">No Active Training Run</h3>
+                      <p className="text-xs text-gray-muted mt-0.5">Select a dataset and models to start a new run</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowNewRunDialog(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 transition-colors text-sm font-medium"
+                  >
+                    <Plus className="w-4 h-4" />
+                    New Training Run
+                  </button>
+                </div>
               </div>
             )}
+
+            {/* Training History — always visible */}
+            <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="font-syne text-base font-bold text-black-text">Training History</h2>
+                  <p className="text-xs text-gray-muted mt-1">
+                    {loadingHistory ? 'Loading...' : `${trainingHistory.length} model run${trainingHistory.length !== 1 ? 's' : ''} completed`}
+                  </p>
+                </div>
+                <button
+                  onClick={refreshHistory}
+                  disabled={loadingHistory}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors text-xs text-gray-muted disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+              {/* Search bar */}
+              <div className="relative mb-4">
+                <input
+                  type="text"
+                  placeholder="Search runs by model name, dataset ID, or status…"
+                  value={historySearch}
+                  onChange={e => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+                  className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-primary/30 focus:border-purple-primary"
+                />
+                <Eye className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+              </div>
+
+              {loadingHistory ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-6 h-6 border-2 border-purple-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : trainingHistory.length === 0 ? (
+                <div className="text-center py-10">
+                  <BarChart3 className="w-10 h-10 text-purple-primary/30 mx-auto mb-3" />
+                  <p className="text-sm text-gray-muted">No training runs recorded yet</p>
+                  <p className="text-xs text-gray-muted mt-1">Results will appear here after your first run completes</p>
+                </div>
+              ) : (() => {
+                // ── Group jobs into sessions by dataset_id ──
+                const sessionsMap = new Map();
+                trainingHistory.forEach(job => {
+                  const key = job.dataset_id || `no-dataset-${new Date(job.created_at).toDateString()}`;
+                  if (!sessionsMap.has(key)) sessionsMap.set(key, []);
+                  sessionsMap.get(key).push(job);
+                });
+                // Sort sessions newest-first
+                let sessions = Array.from(sessionsMap.entries())
+                  .map(([key, jobs]) => ({
+                    key,
+                    jobs: jobs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+                    latestDate: jobs.reduce((d, j) => new Date(j.created_at) > new Date(d) ? j.created_at : d, jobs[0].created_at),
+                    bestAuc: Math.max(...jobs.map(j => j.test_auc || j.oof_auc || 0).filter(Boolean)),
+                    datasetId: jobs[0].dataset_id,
+                  }))
+                  .sort((a, b) => new Date(b.latestDate) - new Date(a.latestDate));
+
+                // Apply search filter
+                if (historySearch.trim()) {
+                  const q = historySearch.toLowerCase();
+                  sessions = sessions.filter(s =>
+                    s.jobs.some(j =>
+                      (j.model_name || '').toLowerCase().includes(q) ||
+                      (j.job_id || '').toLowerCase().includes(q) ||
+                      (j.dataset_id || '').toLowerCase().includes(q) ||
+                      (j.status || '').toLowerCase().includes(q) ||
+                      (j.job_type || '').toLowerCase().includes(q)
+                    ) || (s.datasetId || '').toLowerCase().includes(q)
+                  );
+                }
+
+                const pagedSessions = sessions.slice(0, historyPage * SESSIONS_PER_PAGE);
+                const hasMore = sessions.length > historyPage * SESSIONS_PER_PAGE;
+
+                const toggleSession = (key) => setExpandedSessions(prev => {
+                  const next = new Set(prev);
+                  next.has(key) ? next.delete(key) : next.add(key);
+                  return next;
+                });
+
+                return (
+                  <div className="space-y-3">
+                    {sessions.length === 0 && historySearch && (
+                      <p className="text-center py-6 text-xs text-gray-400">No runs match "{historySearch}"</p>
+                    )}
+                    {pagedSessions.map((session, si) => {
+                      const isOpen = expandedSessions.has(session.key) || (si === 0 && expandedSessions.has('session-0'));
+                      const completedJobs = session.jobs.filter(j => j.status === 'completed');
+                      const modelJobIds = completedJobs.map(j => j.job_id);
+                      const sessionDate = new Date(session.latestDate);
+                      const isToday = sessionDate.toDateString() === new Date().toDateString();
+                      const dateLabel = isToday ? 'Today' : sessionDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                      const baseCount = session.jobs.filter(j => j.job_type === 'base_model').length;
+                      const ensembleCount = session.jobs.filter(j => j.job_type === 'ensemble').length;
+
+                      return (
+                        <div key={session.key} className={`border rounded-xl overflow-hidden transition-all ${isToday ? 'border-purple-200 bg-purple-50/20' : 'border-gray-150 bg-white/60'}`}>
+                          {/* Session Header */}
+                          <button
+                            onClick={() => toggleSession(si === 0 ? 'session-0' : session.key)}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-black/5 transition-colors text-left"
+                          >
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isToday ? 'bg-purple-dim' : 'bg-gray-100'}`}>
+                              <FolderOpen className={`w-4 h-4 ${isToday ? 'text-purple-primary' : 'text-gray-400'}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-syne text-sm font-bold text-black-text">{dateLabel}</span>
+                                {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-primary text-white">Today</span>}
+                                <span className="text-[10px] text-gray-400">{baseCount} base{ensembleCount ? `, ${ensembleCount} ensemble` : ''}</span>
+                              </div>
+                              <div className="text-[10px] text-gray-400 mt-0.5 font-mono truncate">
+                                {session.datasetId ? `dataset: ${session.datasetId.slice(0, 8)}…` : 'no dataset ref'}
+                              </div>
+                              {/* Submitted by */}
+                              {session.jobs[0]?.user_full_name && (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <Users className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                  <span className="text-[10px] text-gray-600 font-medium">{session.jobs[0].user_full_name}</span>
+                                  {session.jobs[0].user_full_name !== user?.full_name && (
+                                    <span className="text-[10px] text-gray-400">(Other Team Member)</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            {session.bestAuc > 0 && (
+                              <div className="text-right flex-shrink-0 mr-2">
+                                <div className="text-[10px] text-gray-400">Best AUC</div>
+                                <div className="font-bold text-sm text-purple-primary">{session.bestAuc.toFixed(3)}</div>
+                              </div>
+                            )}
+                            {completedJobs.length >= 1 && (
+                              <button
+                                onClick={e => { e.stopPropagation(); navigate('/models', { state: { highlightIds: modelJobIds } }); }}
+                                className="flex-shrink-0 flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg bg-purple-dim text-purple-primary hover:bg-purple-primary hover:text-white transition-colors mr-1"
+                                title="View these models in Registry"
+                              >
+                                <Layers className="w-3 h-3" /> Registry →
+                              </button>
+                            )}
+                            <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {/* Session Jobs */}
+                          {isOpen && (
+                            <div className="px-4 pb-4 border-t border-gray-100 space-y-2 pt-3">
+                              {session.jobs.map(job => (
+                                <HistoryJobCard
+                                  key={job.job_id}
+                                  job={job}
+                                  isExpanded={expandedHistoryJobs.has(job.job_id)}
+                                  onToggle={() => setExpandedHistoryJobs(prev => {
+                                    const next = new Set(prev);
+                                    next.has(job.job_id) ? next.delete(job.job_id) : next.add(job.job_id);
+                                    return next;
+                                  })}
+                                />
+                              ))}
+                              {/* Add Ensemble within session — functional inline form */}
+                              {completedJobs.filter(j => j.job_type === 'base_model').length >= 2 &&
+                               !session.jobs.some(j => j.job_type === 'ensemble') && (
+                                historyEnsembleSession === session.key ? (
+                                  <HistoryEnsembleSection
+                                    session={session}
+                                    onStart={(cfg) => startHistoryEnsemble(session, cfg)}
+                                    onCancel={() => setHistoryEnsembleSession(null)}
+                                    isLoading={historyEnsembleLoading}
+                                  />
+                                ) : historyEnsembleJobs[session.key] ? (
+                                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-xs text-blue-700 font-medium">
+                                    <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                                    Ensemble training in progress — history will refresh automatically
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setHistoryEnsembleSession(session.key);
+                                      // auto-expand the session
+                                      setExpandedSessions(prev => new Set([...prev, session.key, 'session-0']));
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-purple-300 text-purple-primary hover:bg-purple-dim text-xs font-medium transition-colors"
+                                  >
+                                    <Layers className="w-3.5 h-3.5" />
+                                    Add Ensemble on these base models →
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {hasMore && (
+                      <button
+                        onClick={() => setHistoryPage(p => p + 1)}
+                        className="w-full py-2.5 rounded-xl border border-gray-200 text-xs text-gray-muted hover:bg-gray-50 transition-colors"
+                      >
+                        Load older sessions ({sessions.length - pagedSessions.length} more)
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Dataset Selection Dialog */}
-      {showDatasetSelector && (
-        <DatasetSelectorDialog
-          datasets={availableDatasets}
-          selectedDataset={selectedDataset}
-          onSelectDataset={(dataset) => {
-            setSelectedDataset(dataset);
-            setConfig(prev => ({ ...prev, batchId: dataset.batch_id }));
-            setShowDatasetSelector(false);
-            setShowNewRunDialog(true);
-          }}
-          onClose={() => setShowDatasetSelector(false)}
-        />
-      )}
-
-      {/* New Training Run Dialog */}
+      {/* Training Wizard Dialog */}
       {showNewRunDialog && (
         <NewTrainingRunDialog
+          availableDatasets={availableDatasets}
           selectedModels={selectedModels}
           onToggleModel={toggleModel}
+          onSetModels={setSelectedModels}
           config={config}
           onConfigChange={setConfig}
           onStart={startTrainingRun}
           onClose={() => setShowNewRunDialog(false)}
           selectedDataset={selectedDataset}
+          onSelectDataset={(dataset) => {
+            setSelectedDataset(dataset);
+            setConfig(prev => ({ ...prev, batchId: dataset.batch_id }));
+          }}
           isLoading={isPreparingDataset || isStartingTraining}
           loadingStatus={datasetPrepStatus}
-        />
-      )}
-      
-      {/* Ensemble Training Dialog */}
-      {showEnsembleDialog && (
-        <EnsembleTrainingDialog
-          completedModels={completedModels}
-          activeRun={activeRun}
-          onStart={startEnsembleTraining}
-          onClose={() => setShowEnsembleDialog(false)}
-          isLoading={isTrainingEnsemble}
-          loadingStatus={ensembleStatus}
         />
       )}
       
@@ -637,366 +947,482 @@ export default function TrainingJobsPage() {
   );
 }
 
-// Training Job Card Component
-function TrainingJobCard({ job, modelInfo }) {
-  const Icon = modelInfo?.icon || Brain;
-  
-  const getStatusConfig = () => {
-    switch (job.status) {
-      case 'running':
-        return { icon: Zap, color: 'text-amber', bg: 'bg-amber-dim', label: 'Training...' };
-      case 'completed':
-        return { icon: CheckCircle, color: 'text-green', bg: 'bg-green-dim', label: 'Complete' };
-      case 'failed':
-        return { icon: XCircle, color: 'text-red', bg: 'bg-red-dim', label: 'Failed' };
-      case 'queued':
-        return { icon: Clock, color: 'text-blue-500', bg: 'bg-blue-50', label: 'Queued' };
-      default:
-        return { icon: Clock, color: 'text-gray-muted', bg: 'bg-gray-100', label: 'Unknown' };
-    }
+// Inline Ensemble Section — shown below base models when ≥2 are complete
+function EnsembleSection({ completedModels, activeRun, onStart, isLoading }) {
+  const [expanded, setExpanded] = useState(false);
+  const [metaLearner, setMetaLearner] = useState('logistic_regression');
+
+  const META_LEARNERS = [
+    { id: 'logistic_regression', label: 'Logistic Regression', desc: 'Fast, interpretable, good baseline' },
+    { id: 'gradient_boosting',   label: 'Gradient Boosting',   desc: 'Powerful, handles non-linearity' },
+    { id: 'neural_network',      label: 'Neural Network',       desc: 'Deep stacking, highest capacity' },
+  ];
+
+  const handleStart = () => {
+    onStart({ metaLearnerType: metaLearner, baseModels: completedModels });
   };
 
-  const statusConfig = getStatusConfig();
-  const StatusIcon = statusConfig.icon;
+  return (
+    <div className="border-2 border-dashed border-purple-200 rounded-xl overflow-hidden">
+      <button onClick={() => setExpanded(v => !v)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-purple-50/50 transition-colors text-left">
+        <div className="w-8 h-8 rounded-lg bg-purple-dim flex items-center justify-center flex-shrink-0">
+          <Layers className="w-4 h-4 text-purple-primary" />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-syne text-sm font-bold text-purple-primary">Train Stacking Ensemble</span>
+            <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-purple-dim text-purple-primary">
+              {completedModels.length} base models ready
+            </span>
+          </div>
+          <p className="text-[10px] text-gray-400 mt-0.5">Combine your trained models into a meta-learner</p>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-purple-300 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-purple-100 bg-purple-50/30">
+          <p className="text-xs text-gray-500 mt-3 mb-2">Select meta-learner algorithm:</p>
+          <div className="space-y-2 mb-4">
+            {META_LEARNERS.map(ml => (
+              <label key={ml.id} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${metaLearner === ml.id ? 'border-purple-primary bg-purple-dim' : 'border-gray-200 hover:border-purple-200'}`}>
+                <input type="radio" name="metaLearner" value={ml.id} checked={metaLearner === ml.id} onChange={() => setMetaLearner(ml.id)} className="mt-0.5 accent-purple-600" />
+                <div>
+                  <div className="text-xs font-semibold text-black-text">{ml.label}</div>
+                  <div className="text-[10px] text-gray-400">{ml.desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={handleStart}
+            disabled={isLoading}
+            className="w-full py-2.5 rounded-lg bg-purple-primary text-white text-sm font-medium hover:bg-purple-primary/90 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Starting...</>
+            ) : (
+              <><Layers className="w-4 h-4" /> Start Ensemble Training</>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Inline Ensemble Section for History sessions
+function HistoryEnsembleSection({ session, onStart, onCancel, isLoading }) {
+  const [metaLearner, setMetaLearner] = useState('logistic_regression');
+  const baseCount = session.jobs.filter(j => j.job_type === 'base_model' && j.status === 'completed').length;
+
+  const META_LEARNERS = [
+    { id: 'logistic_regression', label: 'Logistic Regression', desc: 'Fast, interpretable, good baseline' },
+    { id: 'gradient_boosting',   label: 'Gradient Boosting',   desc: 'Powerful, handles non-linearity' },
+    { id: 'neural_network',      label: 'Neural Network',       desc: 'Deep stacking, highest capacity' },
+  ];
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-xl p-4">
-      <div className="flex items-center gap-4">
-        <div className={`w-12 h-12 rounded-lg ${statusConfig.bg} flex items-center justify-center`}>
-          <Icon className={`w-6 h-6 ${statusConfig.color}`} />
+    <div className="border-2 border-purple-200 rounded-xl overflow-hidden bg-purple-50/30">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-purple-100">
+        <Layers className="w-4 h-4 text-purple-primary flex-shrink-0" />
+        <span className="font-syne text-xs font-bold text-purple-primary flex-1">
+          Stack {baseCount} base models into an ensemble
+        </span>
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded transition-colors">Cancel</button>
+      </div>
+      <div className="px-4 pb-4 pt-3">
+        <p className="text-[10px] text-gray-500 mb-2">Select meta-learner:</p>
+        <div className="space-y-1.5 mb-3">
+          {META_LEARNERS.map(ml => (
+            <label key={ml.id} className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${metaLearner === ml.id ? 'border-purple-primary bg-white' : 'border-gray-200 hover:border-purple-200'}`}>
+              <input type="radio" name={`histMeta-${session.key}`} value={ml.id} checked={metaLearner === ml.id} onChange={() => setMetaLearner(ml.id)} className="mt-0.5 accent-purple-600" />
+              <div>
+                <div className="text-[11px] font-semibold text-black-text">{ml.label}</div>
+                <div className="text-[10px] text-gray-400">{ml.desc}</div>
+              </div>
+            </label>
+          ))}
         </div>
-        
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-syne text-sm font-bold text-black-text">{modelInfo?.name || job.model_name}</h3>
-            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${statusConfig.bg} ${statusConfig.color}`}>
-              <StatusIcon className="w-3 h-3" />
+        <button
+          onClick={() => onStart({ metaLearnerType: metaLearner })}
+          disabled={isLoading}
+          className="w-full py-2 rounded-lg bg-purple-primary text-white text-xs font-medium hover:bg-purple-primary/90 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+        >
+          {isLoading ? (
+            <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Starting…</>
+          ) : (
+            <><Layers className="w-3.5 h-3.5" /> Start Ensemble Training</>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Training Job Card Component (expandable row)
+function TrainingJobCard({ job, modelInfo, isExpanded, onToggle }) {
+  const isEnsemble = job.model_name === 'ensemble' || !modelInfo;
+  const Icon = isEnsemble ? Layers : (modelInfo?.icon || Brain);
+
+  const statusConfig = {
+    running:   { icon: Zap,         color: 'text-amber',     bg: 'bg-amber-dim',  label: 'Training...' },
+    completed: { icon: CheckCircle, color: 'text-green',     bg: 'bg-green-dim',  label: 'Complete' },
+    failed:    { icon: XCircle,     color: 'text-red-500',   bg: 'bg-red-50',     label: 'Failed' },
+    queued:    { icon: Clock,       color: 'text-blue-500',  bg: 'bg-blue-50',    label: 'Queued' },
+  }[job.status] || { icon: Clock, color: 'text-gray-muted', bg: 'bg-gray-100', label: 'Unknown' };
+  const StatusIcon = statusConfig.icon;
+  const displayName = isEnsemble ? 'Stacking Ensemble' : (modelInfo?.name || job.model_name);
+
+  return (
+    <div className={`border rounded-xl overflow-hidden transition-all ${isEnsemble ? 'border-purple-200 bg-purple-50/30' : 'border-gray-100 bg-white/50'}`}>
+      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-black/5 transition-colors text-left">
+        <div className={`w-8 h-8 rounded-lg ${statusConfig.bg} flex items-center justify-center flex-shrink-0`}>
+          {job.status === 'running'
+            ? <Icon className={`w-4 h-4 ${statusConfig.color} animate-pulse`} />
+            : <Icon className={`w-4 h-4 ${statusConfig.color}`} />
+          }
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-syne text-sm font-bold text-black-text truncate">{displayName}</span>
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusConfig.bg} ${statusConfig.color} flex-shrink-0`}>
+              <StatusIcon className="w-2.5 h-2.5" />
               {statusConfig.label}
             </span>
           </div>
-          
           {job.status === 'running' && (
-            <>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
-                <div
-                  className="h-full bg-amber rounded-full transition-all"
-                  style={{ width: `${job.progress || 0}%` }}
-                />
+            <div className="flex items-center gap-2 mt-1">
+              <div className="h-1 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-full bg-amber rounded-full transition-all" style={{ width: `${job.progress || 15}%` }} />
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-muted">Progress: {job.progress || 0}%</span>
-                <span className="text-amber font-medium">Training...</span>
-              </div>
-            </>
-          )}
-          
-          {job.status === 'completed' && job.result && (
-            <div className="grid grid-cols-6 gap-3 text-xs">
-              <div>
-                <div className="text-gray-muted">OOF AUC</div>
-                <div className="font-bold text-green">{job.result.oof_auc?.toFixed(3) || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-gray-muted">Test AUC</div>
-                <div className="font-bold text-purple-primary">{job.result.test_auc?.toFixed(3) || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-gray-muted">Precision</div>
-                <div className="font-bold text-blue-500">{job.result.test_precision?.toFixed(3) || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-gray-muted">Recall</div>
-                <div className="font-bold text-amber">{job.result.test_recall?.toFixed(3) || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-gray-muted">F1 Score</div>
-                <div className="font-bold text-green">{job.result.test_f1?.toFixed(3) || 'N/A'}</div>
-              </div>
-              <div>
-                <div className="text-gray-muted">Training Time</div>
-                <div className="font-bold text-black-text">
-                  {job.result.training_time_seconds ? `${Math.round(job.result.training_time_seconds)}s` : 'N/A'}
-                </div>
-              </div>
+              <span className="text-[10px] text-amber font-medium">{job.progress || 0}%</span>
             </div>
           )}
-          
-          {job.status === 'queued' && (
-            <div className="text-xs text-gray-muted">Waiting to start...</div>
-          )}
         </div>
-      </div>
-    </div>
-  );
-}
 
-// New Training Run Dialog Component
-// Dataset Selector Dialog Component
-function DatasetSelectorDialog({ datasets, selectedDataset, onSelectDataset, onClose }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="font-syne text-xl font-bold text-black-text">Select Dataset for Training</h2>
-            <p className="text-sm text-gray-muted mt-1">Choose a validated dataset to train models on</p>
+        {job.status === 'completed' && job.result && (
+          <div className="flex items-center gap-4 text-xs flex-shrink-0 mr-2">
+            <div className="text-right">
+              <div className="text-[10px] text-gray-400">AUC</div>
+              <div className="font-bold text-purple-primary">
+                {(job.result.test_auc ?? job.result.ensemble_test_auc ?? job.result.oof_auc)?.toFixed(3) || '—'}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-gray-400">F1</div>
+              <div className="font-bold text-green">
+                {(job.result.test_f1 ?? job.result.ensemble_test_f1 ?? job.result.f1)?.toFixed(3) || '—'}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-gray-400">Time</div>
+              <div className="font-bold text-black-text">
+                {job.result.training_time_seconds ? `${Math.round(job.result.training_time_seconds)}s` : '—'}
+              </div>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-muted" />
-          </button>
-        </div>
+        )}
+        {job.status === 'queued' && <span className="text-xs text-blue-400 flex-shrink-0 mr-2">Waiting...</span>}
 
-        {/* Dataset List */}
-        <div className="space-y-3">
-          {datasets.length === 0 ? (
-            <div className="text-center py-12">
-              <Database className="w-12 h-12 text-gray-muted mx-auto mb-3" />
-              <p className="text-sm text-gray-muted">No datasets available</p>
-              <p className="text-xs text-gray-muted mt-1">Upload and label a dataset first</p>
+        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isExpanded && (
+        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+          {job.status === 'queued' && (
+            <div className="flex items-center gap-2 text-xs text-blue-500 py-1">
+              <Clock className="w-3.5 h-3.5" /> Waiting for resources to become available...
             </div>
-          ) : (
-            datasets.map((dataset) => {
-              const recordCount = dataset.record_count || 0;
-              const labeledCount = dataset.labeled_count || 0;
-              const labelingProgress = recordCount > 0 ? Math.round((labeledCount / recordCount) * 100) : 0;
-              const isFullyLabeled = labelingProgress >= 50; // Lower threshold for testing
-              const isSelected = selectedDataset?.batch_id === dataset.batch_id;
-
-              return (
-                <button
-                  key={dataset.batch_id}
-                  onClick={() => onSelectDataset(dataset)} // Remove isFullyLabeled check
-                  className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                    isSelected
-                      ? 'border-purple-primary bg-purple-primary/5'
-                      : 'border-gray-200 hover:border-purple-primary/50 hover:bg-purple-primary/5'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Database className="w-4 h-4 text-purple-primary" />
-                        <h3 className="font-syne font-bold text-sm text-black-text">
-                          {dataset.original_filename || dataset.batch_id.substring(0, 8)}
-                        </h3>
-                        <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-                          ✓ Ready
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-4 text-xs">
-                        <div>
-                          <span className="text-gray-muted">Records:</span>
-                          <span className="ml-1 font-medium text-black-text">{recordCount}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-muted">Labeled:</span>
-                          <span className="ml-1 font-medium text-black-text">{labeledCount}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-muted">Uploaded:</span>
-                          <span className="ml-1 font-medium text-black-text">
-                            {new Date(dataset.uploaded_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-
-                      {!isFullyLabeled && (
-                        <p className="text-xs text-yellow-600 mt-2">
-                          ⚠️ Dataset must be 100% labeled before training
-                        </p>
-                      )}
-                    </div>
-
-                    {isSelected && (
-                      <CheckCircle className="w-5 h-5 text-purple-primary flex-shrink-0 ml-3" />
-                    )}
-                  </div>
-                </button>
-              );
-            })
+          )}
+          {job.status === 'running' && (
+            <div className="space-y-2">
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-full bg-amber rounded-full transition-all" style={{ width: `${job.progress || 15}%` }} />
+              </div>
+              <p className="text-xs text-gray-500">Training in progress — {job.progress || 0}% complete</p>
+            </div>
+          )}
+          {job.status === 'completed' && job.result && (
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'AUC-ROC (Test)', value: (job.result.test_auc ?? job.result.ensemble_test_auc)?.toFixed(3), color: 'text-purple-primary' },
+                { label: 'CV AUC (OOF)',   value: (job.result.oof_auc ?? job.result.ensemble_oof_auc)?.toFixed(3),  color: 'text-purple-primary/70' },
+                { label: 'Precision',      value: (job.result.test_precision ?? job.result.ensemble_test_precision)?.toFixed(3), color: 'text-blue-500' },
+                { label: 'Recall',         value: (job.result.test_recall ?? job.result.ensemble_test_recall)?.toFixed(3), color: 'text-amber' },
+                { label: 'F1 Score',       value: (job.result.test_f1 ?? job.result.ensemble_test_f1)?.toFixed(3), color: 'text-green' },
+                { label: 'Training Time',  value: job.result.training_time_seconds ? `${Math.round(job.result.training_time_seconds)}s` : null, color: 'text-black-text' },
+              ].filter(m => m.value != null).map(({ label, value, color }) => (
+                <div key={label} className="bg-white rounded-lg px-3 py-2 border border-gray-100">
+                  <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
+                  <div className={`text-sm font-bold ${color}`}>{value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {job.status === 'failed' && (
+            <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              Error: {job.error_message || 'Training failed'}
+            </div>
           )}
         </div>
-
-        {/* Help Text */}
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-          <p className="text-xs text-blue-700">
-            <span className="font-medium">💡 Tip:</span> Only fully labeled datasets can be used for training. 
-            Complete labeling in the Data Preparation tab first.
-          </p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function NewTrainingRunDialog({ selectedModels, onToggleModel, config, onConfigChange, onStart, onClose, selectedDataset, isLoading, loadingStatus }) {
-  // Group models by category
+// 3-Step Training Wizard
+function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel, onSetModels, config, onConfigChange, onStart, onClose, selectedDataset, onSelectDataset, isLoading, loadingStatus }) {
+  const [step, setStep] = useState(selectedDataset ? 2 : 1);
+  const [datasetSearch, setDatasetSearch] = useState('');
+  const [showAllDatasets, setShowAllDatasets] = useState(false);
+  const DATASET_VISIBLE = 10;
+
+  const getCleanName = (dataset) => {
+    const raw = dataset.original_filename || dataset.file_name || '';
+    const cleaned = raw
+      .replace(/^Preprocessed Session\s+/i, '')
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '')
+      .replace(/\.csv\s*$/i, '')
+      .trim();
+    if (cleaned) return cleaned;
+    // Build a descriptive fallback from metadata
+    const count = dataset.record_count || dataset.row_count;
+    const date = dataset.uploaded_at ? new Date(dataset.uploaded_at) : null;
+    const dateStr = date ? `${date.toLocaleString('en-US', { month: 'short' })} ${date.getDate()}` : '';
+    const countStr = count ? ` · ${count} rows` : '';
+    return dateStr ? `Upload ${dateStr}${countStr}` : `Dataset${countStr}`;
+  };
+
   const modelsByCategory = AVAILABLE_MODELS.reduce((acc, model) => {
     if (!acc[model.category]) acc[model.category] = [];
     acc[model.category].push(model);
     return acc;
   }, {});
 
+  const canNext1 = !!selectedDataset;
+  const canStart = selectedModels.length > 0 && !!selectedDataset;
+
+  const STEPS = [{ num: 1, label: 'Dataset' }, { num: 2, label: 'Models' }];
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-syne text-xl font-bold text-black-text">Start New Training Run</h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-          >
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
+          <div>
+            <h2 className="font-syne text-lg font-bold text-black-text">New Training Run</h2>
+            <p className="text-xs text-gray-muted mt-0.5">Select a dataset and the algorithms to run</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X className="w-5 h-5 text-gray-muted" />
           </button>
         </div>
 
-        {/* Selected Dataset Info or Warning */}
-        {selectedDataset ? (
-          <div className="mb-5 p-4 bg-purple-50 rounded-xl border border-purple-200">
-            <div className="flex items-center gap-2 mb-2">
-              <Database className="w-4 h-4 text-purple-primary" />
-              <h3 className="font-syne font-bold text-sm text-black-text">Training Dataset</h3>
-            </div>
-            <div className="text-sm text-gray-700">
-              <p className="font-medium">{selectedDataset.original_filename || selectedDataset.batch_id.substring(0, 8)}</p>
-              <p className="text-xs text-gray-muted mt-1">
-                {selectedDataset.record_count} records • {selectedDataset.labeled_count} labeled
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="mb-5 p-4 bg-amber-50 rounded-xl border border-amber-200">
-            <div className="flex items-center gap-2 mb-2">
-              <Database className="w-4 h-4 text-amber-600" />
-              <h3 className="font-syne font-bold text-sm text-amber-900">No Dataset Selected</h3>
-            </div>
-            <p className="text-sm text-amber-800">
-              Please close this dialog and click "New Training Run" to select a dataset first.
-            </p>
-          </div>
-        )}
-        
-        {/* Model Selection */}
-        <div className="mb-6">
-          <h3 className="font-syne text-sm font-bold text-black-text mb-3">Select Models to Train</h3>
-          
-          {Object.entries(modelsByCategory).map(([category, models]) => (
-            <div key={category} className="mb-4">
-              <div className="text-xs font-bold text-gray-muted mb-2">{category}</div>
-              <div className="grid grid-cols-3 gap-2">
-                {models.map(model => {
-                  const Icon = model.icon;
-                  const isSelected = selectedModels.includes(model.id);
-                  
-                  return (
-                    <button
-                      key={model.id}
-                      onClick={() => model.implemented && onToggleModel(model.id)}
-                      disabled={!model.implemented}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 transition-all text-left ${
-                        isSelected
-                          ? 'border-purple-primary bg-purple-dim'
-                          : model.implemented
-                          ? 'border-gray-200 hover:border-purple-primary/50'
-                          : 'border-gray-200 opacity-50 cursor-not-allowed'
-                      }`}
-                    >
-                      <Icon className={`w-4 h-4 ${isSelected ? 'text-purple-primary' : 'text-gray-muted'}`} />
-                      <span className="text-xs font-medium text-black-text">{model.name}</span>
-                      {!model.implemented && (
-                        <span className="ml-auto text-[8px] text-amber">SOON</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+        {/* Step indicator */}
+        <div className="flex items-center px-6 py-3 border-b border-gray-100 gap-1">
+          {STEPS.map((s, i) => (
+            <div key={s.num} className="flex items-center">
+              <button
+                onClick={() => { if (s.num < step || (s.num === 2 && canNext1)) setStep(s.num); }}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                  step === s.num ? 'bg-purple-dim text-purple-primary' : s.num < step ? 'text-purple-primary hover:bg-purple-dim/50 cursor-pointer' : 'text-gray-400 cursor-default'
+                }`}
+              >
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  s.num < step ? 'bg-green-100 text-green-700' : step === s.num ? 'bg-purple-primary text-white' : 'bg-gray-100 text-gray-400'
+                }`}>
+                  {s.num < step ? '✓' : s.num}
+                </span>
+                {s.label}
+              </button>
+              {i < 1 && <ChevronRight className="w-3 h-3 text-gray-300 mx-1" />}
             </div>
           ))}
+          {selectedModels.length > 0 && (
+            <span className="ml-auto text-xs text-purple-primary font-medium">{selectedModels.length} model{selectedModels.length !== 1 ? 's' : ''} selected</span>
+          )}
         </div>
-        
-        {/* Configuration */}
-        <div className="space-y-4 mb-6">
-          <h3 className="font-syne text-sm font-bold text-black-text">Hyperparameter Tuning Configuration</h3>
-          
-          <div>
-            <label className="block text-xs font-medium text-gray-muted mb-2">
-              Optuna Trials: {config.nTrials}
-            </label>
-            <input
-              type="range"
-              min="10"
-              max="200"
-              step="10"
-              value={config.nTrials}
-              onChange={(e) => onConfigChange({ ...config, nTrials: parseInt(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-[10px] text-gray-muted mt-1">More trials = better optimization, but slower</p>
-          </div>
-          
-          <div>
-            <label className="block text-xs font-medium text-gray-muted mb-2">
-              Cross-Validation Folds: {config.cvFolds}
-            </label>
-            <input
-              type="range"
-              min="3"
-              max="10"
-              value={config.cvFolds}
-              onChange={(e) => onConfigChange({ ...config, cvFolds: parseInt(e.target.value) })}
-              className="w-full"
-            />
-          </div>
-        </div>
-        
-        {/* Actions */}
-        <div className="space-y-3">
-          {/* Loading Status */}
-          {isLoading && loadingStatus && (
-            <div className="px-4 py-3 rounded-lg bg-purple-primary/10 border border-purple-primary/30">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-purple-primary border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-sm text-purple-primary font-medium">{loadingStatus}</span>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+
+          {/* ─── STEP 1: Dataset ─── */}
+          {step === 1 && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-muted">Select the dataset to train on. Newest first — defaults to the latest upload.</p>
+
+              {/* Search */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search datasets…"
+                  value={datasetSearch}
+                  onChange={e => setDatasetSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-purple-primary/50"
+                />
+                <svg className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z" /></svg>
               </div>
+
+              {availableDatasets.length === 0 ? (
+                <div className="text-center py-10">
+                  <Database className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-muted">No datasets available</p>
+                  <p className="text-xs text-gray-muted mt-1">Upload and label a dataset in Data Preparation first</p>
+                </div>
+              ) : (() => {
+                const filtered = availableDatasets.filter(d =>
+                  !datasetSearch || getCleanName(d).toLowerCase().includes(datasetSearch.toLowerCase())
+                );
+                const visible = showAllDatasets || datasetSearch ? filtered : filtered.slice(0, DATASET_VISIBLE);
+                const hiddenCount = filtered.length - visible.length;
+
+                return (
+                  <div className="space-y-2">
+                    {visible.map(dataset => {
+                      const isSel = selectedDataset?.batch_id === dataset.batch_id;
+                      return (
+                        <button
+                          key={dataset.batch_id}
+                          onClick={() => onSelectDataset(dataset)}
+                          className={`w-full p-3.5 rounded-xl border-2 text-left transition-all ${
+                            isSel ? 'border-purple-primary bg-purple-primary/5' : 'border-gray-100 hover:border-purple-primary/30 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${isSel ? 'bg-purple-dim' : 'bg-gray-100'}`}>
+                              <Database className={`w-4 h-4 ${isSel ? 'text-purple-primary' : 'text-gray-400'}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-syne font-bold text-sm text-black-text truncate">{getCleanName(dataset)}</span>
+                                {dataset.isToday && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 flex-shrink-0">New</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-muted mt-0.5">{dataset.record_count.toLocaleString()} records · {new Date(dataset.uploaded_at).toLocaleDateString()}</div>
+                            </div>
+                            {isSel && <CheckCircle className="w-5 h-5 text-purple-primary flex-shrink-0" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {hiddenCount > 0 && (
+                      <button onClick={() => setShowAllDatasets(true)} className="w-full py-2 text-xs text-purple-primary hover:underline text-center">
+                        Show {hiddenCount} older dataset{hiddenCount !== 1 ? 's' : ''} →
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
-          
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              disabled={isLoading}
-              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+
+          {/* ─── STEP 2: Model Selection ─── */}
+          {step === 2 && (
+            <div className="space-y-4">
+              {/* Dataset summary */}
+              {selectedDataset && (
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl text-xs">
+                  <Database className="w-3.5 h-3.5 text-purple-primary flex-shrink-0" />
+                  <span className="font-medium text-black-text truncate">{getCleanName(selectedDataset)}</span>
+                  <span className="text-gray-400 flex-shrink-0">{selectedDataset.record_count} records</span>
+                  <button onClick={() => setStep(1)} className="text-purple-primary hover:underline ml-auto flex-shrink-0 text-xs">Change</button>
+                </div>
+              )}
+
+              {/* Preset shortcuts */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 mr-1">Quick select:</span>
+                <button onClick={() => onSetModels(['logistic_regression','decision_tree','random_forest','xgboost','lightgbm'])}
+                  className="text-xs px-2.5 py-1 rounded-full border border-gray-200 hover:border-purple-primary/40 hover:bg-purple-dim transition-colors text-gray-600 hover:text-purple-primary">
+                  5 core models
+                </button>
+                <button onClick={() => onSetModels(AVAILABLE_MODELS.map(m => m.id))}
+                  className="text-xs px-2.5 py-1 rounded-full border border-gray-200 hover:border-purple-primary/40 hover:bg-purple-dim transition-colors text-gray-600 hover:text-purple-primary">
+                  All 13
+                </button>
+                <button onClick={() => onSetModels([])}
+                  className="text-xs px-2.5 py-1 rounded-full border border-gray-200 hover:border-gray-300 transition-colors text-gray-400 hover:text-gray-600">
+                  Clear
+                </button>
+              </div>
+
+              {/* Model grid */}
+              {Object.entries(modelsByCategory).map(([category, models]) => (
+                <div key={category}>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">{category}</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {models.map(model => {
+                      const Icon = model.icon;
+                      const isSel = selectedModels.includes(model.id);
+                      return (
+                        <button
+                          key={model.id}
+                          onClick={() => onToggleModel(model.id)}
+                          className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left text-xs transition-all ${
+                            isSel ? 'border-purple-primary bg-purple-dim' : 'border-gray-100 hover:border-purple-primary/30 hover:bg-gray-50'
+                          }`}
+                        >
+                          <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${isSel ? 'text-purple-primary' : 'text-gray-400'}`} />
+                          <span className={`font-medium truncate ${isSel ? 'text-purple-primary' : 'text-black-text'}`}>{model.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {/* Loading status */}
+              {isLoading && loadingStatus && (
+                <div className="px-4 py-3 rounded-lg bg-purple-primary/10 border border-purple-primary/20">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-purple-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                    <span className="text-sm text-purple-primary font-medium">{loadingStatus}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-100">
+          {step > 1 ? (
+            <button onClick={() => setStep(s => s - 1)} disabled={isLoading}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm font-medium transition-colors disabled:opacity-50">
+              <ChevronLeft className="w-4 h-4" /> Back
+            </button>
+          ) : (
+            <button onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm font-medium transition-colors">
               Cancel
             </button>
-            <button
-              onClick={onStart}
-              disabled={selectedModels.length === 0 || !selectedDataset || isLoading}
-              className="flex-1 px-4 py-2 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              title={!selectedDataset ? "Please select a dataset first" : ""}
-            >
+          )}
+          <div className="flex-1" />
+          {step === 1 ? (
+            <button onClick={() => setStep(2)} disabled={!canNext1}
+              className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={onStart} disabled={!canStart || isLoading}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Processing...
-                </>
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
               ) : (
-                <>
-                  <PlayCircle className="w-4 h-4" />
-                  Start Training ({selectedModels.length} models)
-                </>
+                <><PlayCircle className="w-4 h-4" /> Start Training ({selectedModels.length} model{selectedModels.length !== 1 ? 's' : ''})</>
               )}
             </button>
-          </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
+
 
 // Stat Card Component
 function StatCard({ icon: Icon, label, value, color }) {
@@ -1030,11 +1456,11 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
   
   // Metrics to compare
   const metrics = [
-    { key: 'oof_auc', label: 'OOF AUC', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
-    { key: 'test_auc', label: 'Test AUC', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-purple-primary' },
-    { key: 'test_precision', label: 'Precision', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-blue-500' },
-    { key: 'test_recall', label: 'Recall', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-amber' },
-    { key: 'test_f1', label: 'F1 Score', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
+    { key: 'accuracy', label: 'Accuracy', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
+    { key: 'auc_roc', label: 'AUC-ROC', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-purple-primary' },
+    { key: 'precision', label: 'Precision', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-blue-500' },
+    { key: 'recall', label: 'Recall', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-amber' },
+    { key: 'f1', label: 'F1 Score', format: (v) => v?.toFixed(3) || 'N/A', color: 'text-green' },
     { key: 'training_time_seconds', label: 'Training Time', format: (v) => v ? `${Math.round(v)}s` : 'N/A', color: 'text-gray-700' }
   ];
   
@@ -1166,6 +1592,96 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// History Job Card Component
+function HistoryJobCard({ job, isExpanded, onToggle }) {
+  const modelInfo = AVAILABLE_MODELS.find(m => m.id === job.model_name);
+  const Icon = modelInfo?.icon || Brain;
+
+  const statusMap = {
+    completed: { color: 'text-green',     bg: 'bg-green-dim', label: 'Completed', icon: CheckCircle },
+    failed:    { color: 'text-red-500',   bg: 'bg-red-50',    label: 'Failed',    icon: XCircle },
+    running:   { color: 'text-amber',     bg: 'bg-amber-dim', label: 'Running',   icon: Zap },
+    queued:    { color: 'text-blue-500',  bg: 'bg-blue-50',   label: 'Queued',    icon: Clock },
+  };
+  const statusConfig = statusMap[job.status] || statusMap.queued;
+  const StatusIcon = statusConfig.icon;
+
+  const formatDate = (dt) => {
+    if (!dt) return 'N/A';
+    return new Date(dt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  };
+  const formatDuration = (s) => {
+    if (s == null) return null;
+    return s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+  };
+
+  return (
+    <div className="border border-gray-100 rounded-xl overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left">
+        <div className={`w-8 h-8 rounded-lg ${statusConfig.bg} flex items-center justify-center flex-shrink-0`}>
+          <Icon className={`w-4 h-4 ${statusConfig.color}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-syne text-sm font-bold text-black-text truncate">
+              {modelInfo?.name || job.model_name || 'Unknown Model'}
+            </span>
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusConfig.bg} ${statusConfig.color} flex-shrink-0`}>
+              <StatusIcon className="w-2.5 h-2.5" />
+              {statusConfig.label}
+            </span>
+          </div>
+          <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(job.created_at)}</div>
+        </div>
+        <div className="flex items-center gap-4 flex-shrink-0 text-xs mr-2">
+          {job.oof_auc != null && (
+            <div className="text-right">
+              <div className="text-[10px] text-gray-400">CV AUC</div>
+              <div className="font-bold text-purple-primary">{job.oof_auc.toFixed(3)}</div>
+            </div>
+          )}
+          {formatDuration(job.training_time_seconds) && (
+            <div className="text-right">
+              <div className="text-[10px] text-gray-400">Duration</div>
+              <div className="font-bold text-black-text">{formatDuration(job.training_time_seconds)}</div>
+            </div>
+          )}
+        </div>
+        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isExpanded && (
+        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
+              <div className="text-[10px] text-gray-400 mb-0.5">Job ID</div>
+              <div className="font-mono text-gray-500 text-[10px]">{job.job_id?.slice(0, 8)}…</div>
+            </div>
+            <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
+              <div className="text-[10px] text-gray-400 mb-0.5">Completed</div>
+              <div className="text-gray-700">{formatDate(job.completed_at)}</div>
+            </div>
+            <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
+              <div className="text-[10px] text-gray-400 mb-0.5">CV AUC (OOF)</div>
+              <div className="font-bold text-purple-primary">{job.oof_auc?.toFixed(4) || '—'}</div>
+            </div>
+            <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
+              <div className="text-[10px] text-gray-400 mb-0.5">Duration</div>
+              <div className="font-bold text-black-text">{formatDuration(job.training_time_seconds) || '—'}</div>
+            </div>
+            {job.user_full_name && (
+              <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 col-span-2">
+                <div className="text-[10px] text-gray-400 mb-0.5">Trained by</div>
+                <div className="text-gray-700">{job.user_full_name}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

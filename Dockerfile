@@ -1,9 +1,10 @@
 # ============================================
 # USM Autoimmune ML Platform - Docker Image
-# Base: NVIDIA CUDA 12.1 with cuDNN on Ubuntu 22.04
+# Base: NVIDIA CUDA 12.8 with cuDNN on Ubuntu 22.04
+# Required for Blackwell GPUs (sm_120, RTX PRO 6000)
 # ============================================
 
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.8.0-cudnn-runtime-ubuntu22.04
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -28,8 +29,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
-# Install PyTorch 2.4+ with CUDA 12.1 support FIRST (before requirements.txt)
-RUN pip install --no-cache-dir torch>=2.4.0 torchvision>=0.19.0 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch 2.7+ with CUDA 12.8 support FIRST (Blackwell sm_120 requires 2.7+)
+RUN pip install --no-cache-dir torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
 
 # Copy requirements first (for layer caching)
 COPY requirements.txt /requirements.txt

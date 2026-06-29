@@ -27,87 +27,99 @@ import {
   PieChart,
   Activity,
   FileSpreadsheet,
-  Info
+  Info,
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  ReferenceLine,
+} from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
+import { flexibleAPI } from '../services/api';
 
 export default function EDADetailPage() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('statistics'); // statistics, distributions, correlations, categories
-  
-  // Mock dataset data (replace with API call)
-  const [dataset] = useState({
-    id: id,
-    name: 'AAM-SLE-E (real data)',
-    filename: 'AAM-SLE-E (real data).xlsx',
-    rowCount: 1204,
-    columnCount: 18,
-    uploadedAt: '2026-04-08 14:23',
-    lastAnalyzed: '2026-04-11 10:15'
-  });
-  
-  // Statistical summary for numeric columns
-  const [numericStats] = useState([
-    { column: 'Age', count: 1204, mean: 38.5, std: 12.3, min: 18, q25: 29, median: 37, q75: 47, max: 75, missing: 0 },
-    { column: 'SLEDAI_score', count: 1204, mean: 8.2, std: 4.1, min: 0, q25: 5, median: 8, q75: 11, max: 24, missing: 15 },
-    { column: 'C3_level', count: 1182, mean: 92.5, std: 18.7, min: 45, q25: 78, median: 91, q75: 105, max: 135, missing: 22 },
-    { column: 'C4_level', count: 1195, mean: 18.3, std: 6.2, min: 5, q25: 14, median: 18, q75: 22, max: 38, missing: 9 },
-    { column: 'Anti_dsDNA', count: 1196, mean: 125.4, std: 89.3, min: 0, q25: 52, median: 98, q75: 165, max: 420, missing: 8 }
-  ]);
-  
-  // Categorical columns summary
-  const [categoricalStats] = useState([
-    { 
-      column: 'Gender', 
-      unique: 2, 
-      topValue: 'Female', 
-      topFreq: 1089, 
-      topPercent: 90.4,
-      distribution: [
-        { value: 'Female', count: 1089, percent: 90.4 },
-        { value: 'Male', count: 115, percent: 9.6 }
-      ]
-    },
-    { 
-      column: 'Disease_activity', 
-      unique: 4, 
-      topValue: 'Moderate', 
-      topFreq: 542, 
-      topPercent: 45.0,
-      distribution: [
-        { value: 'Moderate', count: 542, percent: 45.0 },
-        { value: 'Low', count: 385, percent: 32.0 },
-        { value: 'High', count: 201, percent: 16.7 },
-        { value: 'Remission', count: 76, percent: 6.3 }
-      ]
-    },
-    { 
-      column: 'Treatment_type', 
-      unique: 5, 
-      topValue: 'Hydroxychloroquine', 
-      topFreq: 892, 
-      topPercent: 74.1,
-      distribution: [
-        { value: 'Hydroxychloroquine', count: 892, percent: 74.1 },
-        { value: 'Corticosteroids', count: 645, percent: 53.6 },
-        { value: 'Azathioprine', count: 287, percent: 23.8 },
-        { value: 'Mycophenolate', count: 156, percent: 13.0 },
-        { value: 'Cyclophosphamide', count: 89, percent: 7.4 }
-      ]
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('statistics');
+
+  const [dataset, setDataset] = useState({ id, name: '—', rowCount: 0, columnCount: 0, lastAnalyzed: '—' });
+  const [numericStats, setNumericStats] = useState([]);
+  const [categoricalStats, setCategoricalStats] = useState([]);
+  const [correlations, setCorrelations] = useState([]);
+  const [histograms, setHistograms] = useState({});
+
+  const loadData = async () => {
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await flexibleAPI.getBatchSummary(id);
+
+      setDataset({
+        id,
+        name: d.dataset_name || id,
+        rowCount: d.row_count || 0,
+        columnCount: d.column_count || 0,
+        lastAnalyzed: new Date().toLocaleString()
+      });
+
+      // Map numeric_summary dict → array
+      const ns = d.summary_statistics?.numeric_summary || {};
+      const numArr = Object.entries(ns)
+        .filter(([, v]) => v && typeof v === 'object' && !v.error)
+        .map(([col, v]) => ({
+          column: col,
+          count: v.count ?? 0,
+          mean: v.mean ?? 0,
+          std: v.std ?? 0,
+          min: v.min ?? 0,
+          q25: v.q25 ?? 0,
+          median: v.median ?? v.q50 ?? 0,
+          q75: v.q75 ?? 0,
+          max: v.max ?? 0,
+          missing: (d.row_count ?? 0) - (v.count ?? 0)
+        }));
+      setNumericStats(numArr);
+
+      // Map categorical_summary dict → array
+      const cs = d.summary_statistics?.categorical_summary || {};
+      const catArr = Object.entries(cs)
+        .filter(([, v]) => v && typeof v === 'object' && !v.error)
+        .map(([col, v]) => ({
+          column: col,
+          unique: v.unique_count ?? 0,
+          topValue: v.mode ?? '—',
+          topFreq: v.mode_frequency ?? 0,
+          topPercent: v.mode_percentage ?? 0,
+          distribution: Object.entries(v.top_10_values || {}).map(([val, cnt]) => ({
+            value: val,
+            count: cnt,
+            percent: v.count ? parseFloat(((cnt / v.count) * 100).toFixed(1)) : 0
+          }))
+        }));
+      setCategoricalStats(catArr);
+
+      setCorrelations(d.top_correlations || []);
+      setHistograms(d.histograms || {});
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to load EDA data');
+    } finally {
+      setLoading(false);
     }
-  ]);
-  
-  // Correlation data (mock)
-  const [correlations] = useState([
-    { var1: 'SLEDAI_score', var2: 'Anti_dsDNA', correlation: 0.67, strength: 'strong' },
-    { var1: 'Age', var2: 'Disease_duration', correlation: 0.82, strength: 'strong' },
-    { var1: 'C3_level', var2: 'C4_level', correlation: 0.74, strength: 'strong' },
-    { var1: 'SLEDAI_score', var2: 'C3_level', correlation: -0.58, strength: 'moderate' },
-    { var1: 'Age', var2: 'SLEDAI_score', correlation: 0.23, strength: 'weak' }
-  ]);
-  
+  };
+
+  useEffect(() => { loadData(); }, [id]);
+
   const getCorrelationColor = (corr) => {
     const abs = Math.abs(corr);
     if (abs >= 0.7) return 'bg-purple-600';
@@ -115,13 +127,39 @@ export default function EDADetailPage() {
     if (abs >= 0.3) return 'bg-yellow-500';
     return 'bg-gray-400';
   };
-  
-  const getCorrelationText = (corr) => {
-    if (corr > 0) return 'Positive';
-    return 'Negative';
-  };
+
+  const getCorrelationText = (corr) => (corr > 0 ? 'Positive' : 'Negative');
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 text-purple-600 animate-spin mx-auto mb-3" />
+            <p className="text-gray-600">Analysing dataset…</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center max-w-md">
+            <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
+            <p className="text-gray-900 font-semibold mb-1">Failed to load EDA</p>
+            <p className="text-gray-600 text-sm mb-4">{error}</p>
+            <button onClick={() => navigate(-1)} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm">Go Back</button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
+
     <DashboardLayout>
       {/* ═══ TOPBAR ═══ */}
       <div className="h-[70px] flex items-center gap-8 px-6 bg-[#F5F5F7] border-b border-gray-200 flex-shrink-0">
@@ -144,7 +182,7 @@ export default function EDADetailPage() {
             Back to Catalog
           </button>
           <button
-            onClick={() => setLoading(true)}
+            onClick={loadData}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#7B5CF0] text-white hover:bg-[#6B4CE0] transition-colors text-sm font-medium disabled:opacity-50"
           >
@@ -160,7 +198,43 @@ export default function EDADetailPage() {
               </>
             )}
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-gray-200 rounded-lg text-sm font-medium text-black-text hover:border-purple-primary/40 transition-all">
+          <button
+            onClick={() => {
+              // Build a text report and trigger download
+              const lines = [
+                `EDA Report — ${dataset.name}`,
+                `Generated: ${new Date().toLocaleString()}`,
+                `Rows: ${dataset.rowCount}  Columns: ${dataset.columnCount}`,
+                '',
+                '=== NUMERIC STATISTICS ===',
+                'Column,Count,Mean,Std,Min,25%,Median,75%,Max,Missing',
+                ...numericStats.map(s =>
+                  `${s.column},${s.count},${s.mean.toFixed(3)},${s.std.toFixed(3)},${s.min},${s.q25},${s.median},${s.q75},${s.max},${s.missing}`
+                ),
+                '',
+                '=== TOP CORRELATIONS ===',
+                'Variable1,Variable2,Correlation,Strength',
+                ...correlations.map(c =>
+                  `${c.var1},${c.var2},${c.correlation.toFixed(3)},${c.strength}`
+                ),
+                '',
+                '=== CATEGORICAL SUMMARY ===',
+                'Column,UniqueValues,MostCommon,MostCommonPct',
+                ...categoricalStats.map(c =>
+                  `${c.column},${c.unique},${c.topValue},${c.topPercent}%`
+                ),
+              ].join('\n');
+
+              const blob = new Blob([lines], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `EDA_Report_${dataset.name.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-gray-200 rounded-lg text-sm font-medium text-black-text hover:border-purple-primary/40 hover:text-purple-600 transition-all"
+          >
             <Download className="w-4 h-4" />
             Export Report
           </button>
@@ -178,7 +252,6 @@ export default function EDADetailPage() {
               </div>
               <div>
                 <h2 className="font-syne text-xl font-bold text-gray-900 mb-1">{dataset.name}</h2>
-                <p className="text-sm text-gray-600 mb-2">{dataset.filename}</p>
                 <div className="flex items-center gap-6 text-sm text-gray-600">
                   <span><strong>{dataset.rowCount.toLocaleString()}</strong> rows</span>
                   <span><strong>{dataset.columnCount}</strong> columns</span>
@@ -296,32 +369,104 @@ export default function EDADetailPage() {
             {/* Distributions Tab */}
             {activeTab === 'distributions' && (
               <div>
-                <h3 className="font-semibold text-gray-900 text-lg mb-4">Data Distributions</h3>
-                
-                {/* Placeholder for distribution charts */}
-                <div className="grid grid-cols-2 gap-6">
-                  {numericStats.slice(0, 4).map((stat, i) => (
-                    <div key={i} className="border border-gray-200 rounded-lg p-6">
-                      <h4 className="font-medium text-gray-900 mb-4">{stat.column}</h4>
-                      <div className="h-48 bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg flex items-center justify-center">
-                        <div className="text-center text-gray-400">
-                          <BarChart3 className="w-12 h-12 mx-auto mb-2" />
-                          <p className="text-sm">Distribution Histogram</p>
-                          <p className="text-xs mt-1">Mean: {stat.mean.toFixed(1)} | Median: {stat.median}</p>
+                <h3 className="font-semibold text-gray-900 text-lg mb-1">Data Distributions</h3>
+                <p className="text-sm text-gray-500 mb-5">{numericStats.length} numeric columns — histogram bars show frequency across value ranges</p>
+
+                <div className="grid grid-cols-2 gap-5">
+                  {numericStats.map((stat, i) => {
+                    const hist = histograms[stat.column];
+                    // Build chart data: each bin as { range, count }
+                    const chartData = hist
+                      ? hist.counts.map((count, bi) => ({
+                          range: `${hist.bins[bi].toFixed(1)}–${hist.bins[bi + 1].toFixed(1)}`,
+                          count,
+                        }))
+                      : [];
+                    const maxCount = hist ? Math.max(...hist.counts, 1) : 1;
+                    // Detect skewness hint
+                    const skewHint = stat.mean > stat.median ? 'Right-skewed' : stat.mean < stat.median ? 'Left-skewed' : 'Symmetric';
+                    const skewColor = stat.mean > stat.median ? 'text-orange-600' : stat.mean < stat.median ? 'text-blue-600' : 'text-green-600';
+
+                    return (
+                      <div key={i} className="border border-gray-200 rounded-xl p-4 bg-white hover:shadow-md transition-shadow">
+                        <div className="flex items-center justify-between mb-1">
+                          <h4 className="font-semibold text-gray-900 text-sm">{stat.column}</h4>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 ${skewColor}`}>{skewHint}</span>
+                            <span className="text-xs text-gray-400">n={stat.count}</span>
+                          </div>
+                        </div>
+
+                        {hist && chartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height={160}>
+                            <BarChart data={chartData} margin={{ top: 6, right: 4, bottom: 22, left: 0 }}
+                              barCategoryGap="2%">
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                              <XAxis
+                                dataKey="range"
+                                tick={{ fontSize: 9, fill: '#9ca3af' }}
+                                angle={-35}
+                                textAnchor="end"
+                                interval={0}
+                                tickLine={false}
+                              />
+                              <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+                              <Tooltip
+                                formatter={(value) => [`${value} records`, 'Count']}
+                                contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                              />
+                              <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+                                {chartData.map((entry, idx) => (
+                                  <Cell
+                                    key={idx}
+                                    fill={entry.count === maxCount
+                                      ? '#7c3aed'
+                                      : idx < chartData.length / 2
+                                        ? `rgba(124,58,237,${0.3 + (entry.count / maxCount) * 0.5})`
+                                        : `rgba(99,102,241,${0.3 + (entry.count / maxCount) * 0.5})`}
+                                  />
+                                ))}
+                              </Bar>
+                              <ReferenceLine
+                                x={chartData.reduce((best, d) => d.count > best.count ? d : best, chartData[0])?.range}
+                                stroke="#7c3aed"
+                                strokeDasharray="4 2"
+                                strokeWidth={1}
+                              />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="h-40 bg-gray-50 rounded flex items-center justify-center">
+                            <BarChart3 className="w-8 h-8 text-gray-300" />
+                          </div>
+                        )}
+
+                        <div className="mt-2 grid grid-cols-4 gap-1 text-[10px]">
+                          <div className="bg-purple-50 p-1.5 rounded text-center">
+                            <div className="text-gray-400">Mean</div>
+                            <div className="font-bold text-purple-700">{stat.mean.toFixed(2)}</div>
+                          </div>
+                          <div className="bg-blue-50 p-1.5 rounded text-center">
+                            <div className="text-gray-400">Median</div>
+                            <div className="font-bold text-blue-700">{typeof stat.median === 'number' ? stat.median.toFixed(2) : stat.median}</div>
+                          </div>
+                          <div className="bg-gray-50 p-1.5 rounded text-center">
+                            <div className="text-gray-400">Std Dev</div>
+                            <div className="font-bold text-gray-700">{stat.std.toFixed(2)}</div>
+                          </div>
+                          <div className="bg-amber-50 p-1.5 rounded text-center">
+                            <div className="text-gray-400">Missing</div>
+                            <div className={`font-bold ${stat.missing > 0 ? 'text-red-600' : 'text-green-600'}`}>{stat.missing}</div>
+                          </div>
+                        </div>
+                        <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+                          <span>Min: {typeof stat.min === 'number' ? stat.min.toFixed(2) : stat.min}</span>
+                          <span>IQR: {typeof stat.q25 === 'number' && typeof stat.q75 === 'number' ? (stat.q75 - stat.q25).toFixed(2) : '—'}</span>
+                          <span>Max: {typeof stat.max === 'number' ? stat.max.toFixed(2) : stat.max}</span>
                         </div>
                       </div>
-                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-gray-50 p-2 rounded">
-                          <div className="text-gray-500">Range</div>
-                          <div className="font-semibold text-gray-900">{stat.min} - {stat.max}</div>
-                        </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <div className="text-gray-500">Std Dev</div>
-                          <div className="font-semibold text-gray-900">{stat.std.toFixed(2)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -329,62 +474,134 @@ export default function EDADetailPage() {
             {/* Correlations Tab */}
             {activeTab === 'correlations' && (
               <div>
-                <h3 className="font-semibold text-gray-900 text-lg mb-4">Feature Correlations</h3>
-                
-                {/* Correlation table */}
-                <div className="border border-gray-200 rounded-lg overflow-hidden mb-6">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Variable 1</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Variable 2</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700">Correlation</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Type</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Strength</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Visualization</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {correlations.map((corr, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-gray-900">{corr.var1}</td>
-                          <td className="px-4 py-3 font-medium text-gray-900">{corr.var2}</td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={`font-semibold ${corr.correlation > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {corr.correlation.toFixed(2)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              corr.correlation > 0 
-                                ? 'bg-green-100 text-green-700' 
-                                : 'bg-red-100 text-red-700'
-                            }`}>
-                              {getCorrelationText(corr.correlation)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 capitalize text-gray-700">{corr.strength}</td>
-                          <td className="px-4 py-3">
-                            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                              <div 
-                                className={getCorrelationColor(corr.correlation)}
-                                style={{ width: `${Math.abs(corr.correlation) * 100}%` }}
+                <h3 className="font-semibold text-gray-900 text-lg mb-1">Feature Correlations</h3>
+                <p className="text-sm text-gray-500 mb-5">Pearson correlation coefficient between numeric columns (top 10 pairs by |r|)</p>
+
+                {correlations.length === 0 ? (
+                  <div className="text-center py-14 border-2 border-dashed border-gray-200 rounded-xl">
+                    <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-600 font-medium text-sm">No significant correlations detected</p>
+                    <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                      This can happen when numeric columns have very low variance, too many missing values,
+                      or when the dataset has fewer than 2 numeric features.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Horizontal bar chart of |correlation| */}
+                    <div className="border border-gray-200 rounded-xl p-4 bg-white mb-5">
+                      <p className="text-xs text-gray-500 mb-3 font-medium">Correlation Strength (|r|)</p>
+                      <ResponsiveContainer width="100%" height={correlations.length * 36 + 20}>
+                        <BarChart
+                          data={[...correlations].reverse().map(c => ({
+                            pair: `${c.var1} × ${c.var2}`,
+                            abs: Math.abs(c.correlation),
+                            val: c.correlation,
+                          }))}
+                          layout="vertical"
+                          margin={{ top: 0, right: 60, bottom: 0, left: 140 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+                          <XAxis type="number" domain={[0, 1]} tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} />
+                          <YAxis dataKey="pair" type="category" tick={{ fontSize: 10, fill: '#374151' }} width={130} tickLine={false} axisLine={false} />
+                          <Tooltip
+                            formatter={(value, name, props) => [
+                              `r = ${props.payload.val.toFixed(3)}`,
+                              'Pearson r',
+                            ]}
+                            contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                          />
+                          <Bar dataKey="abs" radius={[0, 3, 3, 0]}>
+                            {[...correlations].reverse().map((c, idx) => (
+                              <Cell
+                                key={idx}
+                                fill={c.correlation >= 0
+                                  ? `rgba(124,58,237,${0.3 + Math.abs(c.correlation) * 0.7})`
+                                  : `rgba(239,68,68,${0.3 + Math.abs(c.correlation) * 0.7})`}
                               />
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Correlation table */}
+                    <div className="border border-gray-200 rounded-xl overflow-hidden mb-5">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Variable 1</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Variable 2</th>
+                            <th className="px-4 py-3 text-right font-semibold text-gray-700">Pearson r</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Direction</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Strength</th>
+                            <th className="px-4 py-3 text-left font-semibold text-gray-700">Visual</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {correlations.map((corr, i) => (
+                            <tr key={i} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 font-medium text-gray-900">{corr.var1}</td>
+                              <td className="px-4 py-3 font-medium text-gray-900">{corr.var2}</td>
+                              <td className="px-4 py-3 text-right">
+                                <span className={`font-bold text-base ${corr.correlation > 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                                  {corr.correlation.toFixed(3)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                  corr.correlation > 0
+                                    ? 'bg-purple-100 text-purple-700'
+                                    : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {corr.correlation > 0 ? '↑ Positive' : '↓ Negative'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`capitalize text-xs font-semibold ${
+                                  corr.strength === 'strong' ? 'text-green-700' :
+                                  corr.strength === 'moderate' ? 'text-amber-600' : 'text-gray-500'
+                                }`}>{corr.strength}</span>
+                              </td>
+                              <td className="px-4 py-3 min-w-[120px]">
+                                <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden flex items-center">
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-px h-full bg-gray-300" />
+                                  </div>
+                                  {corr.correlation >= 0 ? (
+                                    <div
+                                      className="absolute left-1/2 h-full rounded-r-full"
+                                      style={{
+                                        width: `${Math.abs(corr.correlation) * 50}%`,
+                                        backgroundColor: 'rgba(124,58,237,0.7)',
+                                      }}
+                                    />
+                                  ) : (
+                                    <div
+                                      className="absolute right-1/2 h-full rounded-l-full"
+                                      style={{
+                                        width: `${Math.abs(corr.correlation) * 50}%`,
+                                        backgroundColor: 'rgba(239,68,68,0.7)',
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
                 {/* Info box */}
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-3">
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl flex items-start gap-3">
                   <Info className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-purple-900">
-                    <strong>Correlation Interpretation:</strong> Values range from -1 to +1. 
-                    Positive values indicate variables increase together, negative values indicate inverse relationships. 
-                    |Correlation| ≥ 0.7 is strong, 0.5-0.7 is moderate, 0.3-0.5 is weak, &lt;0.3 is negligible.
+                    <strong>Interpretation Guide:</strong> Pearson r ranges from −1 to +1.
+                    Purple bars = positive (both variables increase together), Red = negative (inverse).
+                    |r| ≥ 0.7 → strong, 0.5–0.7 → moderate, 0.3–0.5 → weak, &lt;0.3 → negligible.
                   </div>
                 </div>
               </div>
@@ -393,43 +610,130 @@ export default function EDADetailPage() {
             {/* Categories Tab */}
             {activeTab === 'categories' && (
               <div>
-                <h3 className="font-semibold text-gray-900 text-lg mb-4">Categorical Variables Summary</h3>
-                
+                <h3 className="font-semibold text-gray-900 text-lg mb-1">Categorical Variables</h3>
+                <p className="text-sm text-gray-500 mb-5">{categoricalStats.length} categorical columns — distribution of each value shown below</p>
+
                 <div className="space-y-6">
-                  {categoricalStats.map((cat, i) => (
-                    <div key={i} className="border border-gray-200 rounded-lg p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h4 className="font-medium text-gray-900 text-lg">{cat.column}</h4>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {cat.unique} unique values • Most common: <strong>{cat.topValue}</strong> ({cat.topPercent}%)
-                          </p>
+                  {categoricalStats.map((cat, i) => {
+                    // Determine class balance insight
+                    const topPct = cat.topPercent || 0;
+                    const isImbalanced = topPct >= 70;
+                    const isModerate = topPct >= 50 && topPct < 70;
+                    const BAR_COLORS = ['#7c3aed','#6366f1','#3b82f6','#0ea5e9','#10b981','#f59e0b','#ef4444','#ec4899','#8b5cf6','#14b8a6'];
+
+                    // Chart data: top 8 values for readability
+                    const chartData = (cat.distribution || []).slice(0, 8).map(d => ({
+                      value: String(d.value).length > 18 ? String(d.value).slice(0, 16) + '…' : String(d.value),
+                      fullValue: String(d.value),
+                      count: d.count,
+                      percent: d.percent,
+                    }));
+
+                    return (
+                      <div key={i} className="border border-gray-200 rounded-xl p-5 bg-white hover:shadow-md transition-shadow">
+                        {/* Column header */}
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h4 className="font-bold text-gray-900 text-base">{cat.column}</h4>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {cat.unique} unique values
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isImbalanced && (
+                              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+                                <AlertCircle className="w-3 h-3" /> Class Imbalance
+                              </span>
+                            )}
+                            {isModerate && (
+                              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
+                                <Info className="w-3 h-3" /> Moderately Skewed
+                              </span>
+                            )}
+                            {!isImbalanced && !isModerate && (
+                              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-green-700 text-xs font-semibold">
+                                ✓ Balanced
+                              </span>
+                            )}
+                            <span className="px-2.5 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold">
+                              Top: {cat.topValue} ({topPct}%)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-5 gap-4">
+                          {/* Bar chart */}
+                          <div className="col-span-3">
+                            <ResponsiveContainer width="100%" height={Math.max(180, chartData.length * 36)}>
+                              <BarChart
+                                data={chartData}
+                                layout="vertical"
+                                margin={{ top: 0, right: 55, bottom: 0, left: 8 }}
+                                barSize={18}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f3f4f6" />
+                                <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+                                <YAxis
+                                  dataKey="value"
+                                  type="category"
+                                  tick={{ fontSize: 11, fill: '#374151', fontWeight: 500 }}
+                                  width={110}
+                                  tickLine={false}
+                                  axisLine={false}
+                                />
+                                <Tooltip
+                                  formatter={(val, name, props) => [
+                                    `${val} records (${props.payload.percent}%)`,
+                                    props.payload.fullValue,
+                                  ]}
+                                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                                />
+                                <Bar dataKey="count" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 10, fill: '#6b7280', formatter: (v) => `${v}` }}>
+                                  {chartData.map((_, idx) => (
+                                    <Cell key={idx} fill={BAR_COLORS[idx % BAR_COLORS.length]} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          {/* Percent breakdown table */}
+                          <div className="col-span-2 flex flex-col justify-center gap-1">
+                            <p className="text-xs text-gray-400 font-semibold mb-1 uppercase tracking-wide">% Breakdown</p>
+                            {chartData.map((d, j) => (
+                              <div key={j} className="flex items-center gap-2">
+                                <div
+                                  className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                  style={{ backgroundColor: BAR_COLORS[j % BAR_COLORS.length] }}
+                                />
+                                <span className="text-xs text-gray-600 truncate flex-1" title={d.fullValue}>{d.value}</span>
+                                <span className="text-xs font-bold text-gray-800 flex-shrink-0">{d.percent}%</span>
+                              </div>
+                            ))}
+                            {(cat.distribution || []).length > 8 && (
+                              <p className="text-[10px] text-gray-400 mt-1 italic">+ {cat.distribution.length - 8} more values</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Insight bar */}
+                        <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-3 gap-2 text-[11px]">
+                          <div className="bg-gray-50 rounded-lg p-2 text-center">
+                            <div className="text-gray-400">Unique Values</div>
+                            <div className="font-bold text-gray-800 text-sm">{cat.unique}</div>
+                          </div>
+                          <div className="bg-purple-50 rounded-lg p-2 text-center">
+                            <div className="text-gray-400">Dominant Class</div>
+                            <div className="font-bold text-purple-700 truncate" title={cat.topValue}>{cat.topValue}</div>
+                          </div>
+                          <div className={`rounded-lg p-2 text-center ${isImbalanced ? 'bg-red-50' : 'bg-green-50'}`}>
+                            <div className="text-gray-400">Dominant %</div>
+                            <div className={`font-bold text-sm ${isImbalanced ? 'text-red-600' : 'text-green-600'}`}>{topPct}%</div>
+                          </div>
                         </div>
                       </div>
-                      
-                      {/* Distribution bars */}
-                      <div className="space-y-3">
-                        {cat.distribution.map((item, j) => (
-                          <div key={j}>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium text-gray-700">{item.value}</span>
-                              <span className="text-sm text-gray-600">{item.count} ({item.percent}%)</span>
-                            </div>
-                            <div className="w-full h-6 bg-gray-200 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-end px-2"
-                                style={{ width: `${item.percent}%` }}
-                              >
-                                {item.percent > 10 && (
-                                  <span className="text-xs text-white font-medium">{item.percent}%</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

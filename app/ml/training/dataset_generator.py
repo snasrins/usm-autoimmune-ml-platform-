@@ -161,10 +161,11 @@ class DatasetGenerator:
         
         # Step 2: Engineer features dynamically using FeatureEngineeringPipeline
         df, feature_pipeline = self._engineer_features_with_pipeline(
-            df, target_column, 
+            df, target_column,
             apply_composite_features=apply_composite_features,
             composite_low_percentile=composite_low_percentile,
-            composite_high_percentile=composite_high_percentile
+            composite_high_percentile=composite_high_percentile,
+            batch_id=batch_id
         )
         logger.info(f"After feature engineering: {df.shape}")
         
@@ -232,11 +233,58 @@ class DatasetGenerator:
         
         # Step 4: Prepare target variable
         if target_column not in df.columns:
-            available_cols = [col for col in df.columns if 'label' in col.lower() or 'target' in col.lower()]
-            raise ValueError(
-                f"Target column '{target_column}' not found in dataset. "
-                f"Available label columns: {available_cols}"
-            )
+            # Auto-detect: try known label columns in priority order
+            label_priority = ['labels_disease_classification', 'labels_disease_severity', 'labels_custom']
+            auto_detected = None
+
+            # Pass 1: exact column name with non-null values
+            for candidate in label_priority:
+                if candidate in df.columns:
+                    non_null = df[candidate].notna().sum()
+                    if non_null > 0:
+                        auto_detected = candidate
+                        logger.warning(
+                            f"Target column '{target_column}' not found. "
+                            f"Auto-switching to '{candidate}' which has {non_null} labeled records."
+                        )
+                        break
+
+            # Pass 2: one-hot encoded variants (e.g. labels_disease_severity_Moderate)
+            # These come from JSONB dicts like {"Moderate": 1, "Severe": 0} or from
+            # preprocessing pipelines that one-hot-encode the label column.
+            if not auto_detected:
+                for candidate in label_priority:
+                    onehot_cols = sorted([
+                        col for col in df.columns if col.startswith(candidate + '_')
+                    ])
+                    if onehot_cols:
+                        logger.warning(
+                            f"Target column '{target_column}' not found as a flat column. "
+                            f"Found one-hot encoded variant: {onehot_cols}. "
+                            f"Reconstructing '{candidate}' label from argmax."
+                        )
+                        # Convert one-hot columns to numeric and take argmax per row
+                        numeric_oh = df[onehot_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+                        argmax_indices = numeric_oh.values.argmax(axis=1)
+                        class_names = [col[len(candidate) + 1:] for col in onehot_cols]
+                        reconstructed = [class_names[i] for i in argmax_indices]
+                        # Mark rows where ALL one-hot values are 0 as unlabeled (NaN)
+                        all_zero = numeric_oh.max(axis=1) == 0
+                        df[candidate] = reconstructed
+                        df.loc[all_zero, candidate] = None
+                        # Drop the one-hot columns so they don't become features
+                        df = df.drop(columns=onehot_cols, errors='ignore')
+                        auto_detected = candidate
+                        break
+
+            if auto_detected:
+                target_column = auto_detected
+            else:
+                available_cols = [col for col in df.columns if 'label' in col.lower() or 'target' in col.lower()]
+                raise ValueError(
+                    f"Target column '{target_column}' not found in dataset. "
+                    f"Available label columns: {available_cols}"
+                )
         
         # CRITICAL: Drop unlabeled records (those with NaN/null target values)
         initial_count = len(df)
@@ -253,7 +301,9 @@ class DatasetGenerator:
         
         # Remove identifier columns before creating feature matrix
         id_cols = [col for col in df.columns if 'id' in col.lower() or 'record' in col.lower() or 'dataset_type' in col.lower()]
-        columns_to_drop = id_cols + [target_column]
+        # Also drop other label columns that are not the target (they're outputs, not features)
+        other_label_cols = [col for col in df.columns if col.startswith('labels_') and col != target_column]
+        columns_to_drop = list(set(id_cols + other_label_cols + [target_column]))
         
         X = df.drop(columns=columns_to_drop)
         y = df[target_column]
@@ -542,16 +592,20 @@ class DatasetGenerator:
         df = pd.DataFrame(rows)
         logger.info(f"Extracted dataframe shape: {df.shape}")
         
+        # Drop internal metadata columns (start with '_') — these are never features.
+        # Keeps labels_disease_severity, labels_disease_classification, labels_custom etc.
+        metadata_cols = [col for col in df.columns if col.startswith('_')]
+        if metadata_cols:
+            logger.info(f"Dropping {len(metadata_cols)} internal metadata columns (e.g. {metadata_cols[:3]})")
+            df = df.drop(columns=metadata_cols, errors='ignore')
+        
         # DEBUG: Log ALL columns to diagnose label issues
         all_columns = df.columns.tolist()
-        logger.info(f"Total columns: {len(all_columns)}")
+        logger.info(f"Total columns after metadata drop: {len(all_columns)}")
         
         # Look for label-related columns specifically
         label_columns = [col for col in all_columns if 'label' in col.lower()]
         logger.info(f"Label-related columns: {label_columns}")
-        
-        # Log first few columns
-        logger.info(f"First 20 columns: {all_columns[:20]}")
         
         return df
     
@@ -580,7 +634,8 @@ class DatasetGenerator:
         target_column: str,
         apply_composite_features: bool = True,
         composite_low_percentile: float = 10.0,
-        composite_high_percentile: float = 70.0
+        composite_high_percentile: float = 70.0,
+        batch_id: Optional[str] = None
     ) -> Tuple[pd.DataFrame, FeatureEngineeringPipeline]:
         """
         Engineer features using FeatureEngineeringPipeline
@@ -684,6 +739,52 @@ class DatasetGenerator:
                     above_is_positive=False
                 )
         
+        # === LOAD USER-CONFIGURED FE SPECS FROM MINIO ===
+        # If the user ran the Feature Engineering workflow before training,
+        # their custom specs (NLR, PLR, inflammation_score, etc.) were saved
+        # to MinIO. Re-apply them here so training uses the same features.
+        if batch_id:
+            try:
+                import json as _json
+                import os as _os
+                from app.services.minio_service import MinIOService as _MinIO
+                _minio = _MinIO(
+                    endpoint=_os.getenv("MINIO_ENDPOINT", "minio:9000"),
+                    access_key=_os.getenv("MINIO_ROOT_USER", "minio_admin"),
+                    secret_key=_os.getenv("MINIO_ROOT_PASSWORD", "MinIO_P@ssw0rd_2026"),
+                    secure=_os.getenv("MINIO_SECURE", "false").lower() == "true"
+                )
+                _obj = f"feature-engineering/{batch_id}/user_specs.json"
+                _resp = _minio.client.get_object("ml-datasets", _obj)
+                _user_cfg = _json.loads(_resp.read())
+                _resp.close()
+                _resp.release_conn()
+
+                # Names already added by auto-detection
+                _existing_names = {s['name'] for s in pipeline.feature_specs}
+                _added = 0
+                for spec in _user_cfg.get('feature_specs', []):
+                    if spec.get('name') in _existing_names:
+                        continue  # skip duplicates
+                    stype = spec.get('type')
+                    if stype == 'ratio' and spec.get('numerator') in df.columns and spec.get('denominator') in df.columns:
+                        pipeline.add_ratio_feature(spec['name'], spec['numerator'], spec['denominator'], spec.get('epsilon', 1e-6))
+                        _added += 1
+                    elif stype == 'temporal' and spec.get('date_column') in df.columns:
+                        pipeline.add_temporal_feature(spec['name'], spec['date_column'], spec.get('reference_date'), spec.get('unit', 'days'))
+                        _added += 1
+                    elif stype == 'derived':
+                        src = [c for c in spec.get('source_columns', []) if c in df.columns]
+                        if src:
+                            pipeline.feature_specs.append({**spec, 'source_columns': src})
+                            _added += 1
+
+                if _added:
+                    logger.info(f"Re-applied {_added} user-configured FE spec(s) from MinIO for batch {batch_id}")
+            except Exception as _ue:
+                # Non-fatal: no user specs saved, or first-time training before FE was run
+                logger.debug(f"No user FE specs found in MinIO for batch {batch_id}: {_ue}")
+
         # Fit and transform
         df_transformed = pipeline.fit_transform(df)
         

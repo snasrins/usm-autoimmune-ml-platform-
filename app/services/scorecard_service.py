@@ -89,8 +89,22 @@ class ClinicalScorecardService:
                     columns=feature_names
                 )
             
-            # Load model and get prediction
-            model = self.minio.load_model(model_name, version)
+            # Load model and get prediction (try fold_0..fold_4 first, then model.pkl)
+            max_folds = 10
+            model = None
+            for fold_id in range(max_folds):
+                try:
+                    model = self.minio.load_model(model_name, version, fold_id=fold_id)
+                    break
+                except Exception:
+                    continue
+            if model is None:
+                try:
+                    model = self.minio.load_model(model_name, version)
+                except Exception:
+                    raise ValueError(
+                        f"No model artifacts found in MinIO for {model_name}/{version}. Please retrain this model."
+                    )
             prediction_proba = model.predict_proba(X)[0]
             
             # Get class mapping

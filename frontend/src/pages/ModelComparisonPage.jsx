@@ -26,12 +26,15 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
+import ModelingStepsNav from '../components/ModelingStepsNav';
 import PageHeader from '../components/PageHeader';
 import { trainingAPI } from '../services/api-complete';
 import { authAPI } from '../services/api';
+import { useLocation } from 'react-router-dom';
 
 export default function ModelComparisonPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState(null);
   
   const [models, setModels] = useState([]);
@@ -57,19 +60,21 @@ export default function ModelComparisonPage() {
     loadUser();
   }, []);
   
-  // Load trained model IDs from sessionStorage (from training workflow)
+  // Pre-select models from Registry "Compare Selected →" navigation or sessionStorage
   useEffect(() => {
+    const preselected = location.state?.preselected;
+    if (preselected?.length >= 2) {
+      setSelectedModels(preselected);
+      return;
+    }
     const savedModelIds = sessionStorage.getItem('trained_model_ids');
     if (savedModelIds) {
       try {
         const modelIds = JSON.parse(savedModelIds);
-        console.log('[Comparison] Loaded model IDs from session:', modelIds);
-        setSelectedModels(modelIds.slice(0, 4)); // Auto-select up to 4 models
-      } catch (err) {
-        console.error('[Comparison] Error parsing model IDs:', err);
-      }
+        setSelectedModels(modelIds.slice(0, 4));
+      } catch (err) { /* ignore */ }
     }
-  }, []);
+  }, [location.state]);
 
   // Fetch all trained models
   useEffect(() => {
@@ -82,13 +87,14 @@ export default function ModelComparisonPage() {
       const data = await trainingAPI.getModels();
       console.log('[Comparison] Got models:', data.models?.length || 0);
       
-      // Filter only base learners for comparison
-      const baseLearners = (data.models || [])
-        .filter(m => m.model_type === 'base_model' || !m.model_type)
+      // Include both base learners AND ensemble/meta-learner models
+      const allModels = (data.models || [])
         .map(model => ({
           id: model.model_id,
           name: model.model_name || model.algorithm,
           algorithm: model.algorithm || extractAlgorithm(model.model_name),
+          isEnsemble: model.model_type === 'ensemble',
+          modelType: model.model_type || 'base_model',
           // Use test_auc if available, otherwise oof_auc
           auc: model.test_auc ? (model.test_auc * 100).toFixed(2) : 
                model.oof_auc ? (model.oof_auc * 100).toFixed(2) : 'N/A',
@@ -96,15 +102,15 @@ export default function ModelComparisonPage() {
           test_auc: model.test_auc ? (model.test_auc * 100).toFixed(2) : 'N/A',
           accuracy: model.test_auc ? (model.test_auc * 100).toFixed(2) : 
                     model.oof_auc ? (model.oof_auc * 100).toFixed(2) : 'N/A',
-          precision: 'N/A', // Not in list endpoint
-          recall: 'N/A',
-          f1Score: 'N/A',
+          precision: model.test_precision != null ? (model.test_precision * 100).toFixed(1) : 'N/A',
+          recall: model.test_recall != null ? (model.test_recall * 100).toFixed(1) : 'N/A',
+          f1Score: model.test_f1 != null ? (model.test_f1 * 100).toFixed(1) : 'N/A',
           trainedDate: model.trained_at ? new Date(model.trained_at).toLocaleDateString() : 'N/A',
           features: model.feature_count || 0
         }));
       
-      console.log('[Comparison] Processed models:', baseLearners.length);
-      setModels(baseLearners);
+      console.log('[Comparison] Processed models:', allModels.length, '(base + ensemble)');
+      setModels(allModels);
     } catch (err) {
       console.error('Error fetching models:', err);
       setError('Failed to fetch models: ' + err.message);
@@ -115,6 +121,49 @@ export default function ModelComparisonPage() {
     const parts = modelName.split(' ');
     return parts.slice(0, -1).join(' ') || modelName;
   };
+
+  const renderModelCard = (model, isSelected) => (
+    <div
+      key={model.id}
+      onClick={() => toggleModelSelection(model.id)}
+      className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+        isSelected ? 'border-purple-primary bg-purple-50' : 'border-gray-200 bg-white hover:border-purple-primary/40'
+      }`}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <h4 className="font-semibold text-black-text">{model.name}</h4>
+            {model.isEnsemble && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                Ensemble
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-muted">{model.algorithm}</p>
+        </div>
+        {isSelected && <CheckCircle className="w-5 h-5 text-purple-primary flex-shrink-0" />}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        <div className="text-center">
+          <div className="text-xs text-gray-muted">Accuracy</div>
+          <div className="font-bold text-sm text-purple-primary">{model.accuracy}%</div>
+        </div>
+        <div className="text-center">
+          <div className="text-xs text-gray-muted">Precision</div>
+          <div className="font-bold text-sm">{model.precision}%</div>
+        </div>
+        <div className="text-center">
+          <div className="text-xs text-gray-muted">Recall</div>
+          <div className="font-bold text-sm">{model.recall}%</div>
+        </div>
+        <div className="text-center">
+          <div className="text-xs text-gray-muted">F1</div>
+          <div className="font-bold text-sm">{model.f1Score}%</div>
+        </div>
+      </div>
+    </div>
+  );
 
   // Toggle model selection (NO LIMIT)
   const toggleModelSelection = (modelId) => {
@@ -239,37 +288,40 @@ export default function ModelComparisonPage() {
   return (
     <DashboardLayout>
       <PageHeader title="Model Comparison" subtitle="Comparison" user={user} />
-      <div className="flex-1 overflow-y-auto p-6" style={{ background: '#FAFBFC', zoom: 0.78 }}>
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Top Actions Bar */}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={fetchModels}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </button>
-            <button
-              onClick={runComparison}
-              disabled={selectedModels.length < 2 || loading}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Comparing...
-                </>
-              ) : (
-                <>
-                  <BarChart3 className="w-4 h-4" />
-                  Compare Selected ({selectedModels.length})
-                </>
-              )}
-            </button>
-          </div>
+      <ModelingStepsNav />
+      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
+        <div className="px-4 pt-4 pb-2">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-end">
+              <div className="flex items-center gap-3">
+                  <button
+                  onClick={fetchModels}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Refresh
+                </button>
+                <button
+                  onClick={runComparison}
+                  disabled={selectedModels.length < 2 || loading}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Comparing...
+                    </>
+                  ) : (
+                    <>
+                      <BarChart3 className="w-4 h-4" />
+                      Compare Selected ({selectedModels.length})
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
 
-          {/* Selection Info */}
+            {/* Selection Info */}
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Target className="w-5 h-5 text-purple-primary" />
@@ -288,12 +340,17 @@ export default function ModelComparisonPage() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
 
+        {/* Content */}
+        <div className="p-6">
+          <div className="max-w-7xl mx-auto space-y-6">
             {/* Model Selection Grid */}
             {!comparisonData && (
               <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
                 <h3 className="font-syne text-lg font-bold text-black-text mb-4">
-                  Select Models to Compare (No Limit - View 4 at a time)
+                  Select Models to Compare — Base Learners & Ensembles
                 </h3>
                 
                 {models.length === 0 ? (
@@ -308,50 +365,31 @@ export default function ModelComparisonPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    {models.map((model) => {
-                      const isSelected = selectedModels.includes(model.id);
-                      return (
-                        <div
-                          key={model.id}
-                          onClick={() => toggleModelSelection(model.id)}
-                          className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                            isSelected
-                              ? 'border-purple-primary bg-purple-50'
-                              : 'border-gray-200 bg-white hover:border-purple-primary/40'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-black-text mb-1">{model.name}</h4>
-                              <p className="text-xs text-gray-muted">{model.algorithm}</p>
-                            </div>
-                            {isSelected && (
-                              <CheckCircle className="w-5 h-5 text-purple-primary flex-shrink-0" />
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-4 gap-2">
-                            <div className="text-center">
-                              <div className="text-xs text-gray-muted">Accuracy</div>
-                              <div className="font-bold text-sm text-purple-primary">{model.accuracy}%</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-xs text-gray-muted">Precision</div>
-                              <div className="font-bold text-sm">{model.precision}%</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-xs text-gray-muted">Recall</div>
-                              <div className="font-bold text-sm">{model.recall}%</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-xs text-gray-muted">F1</div>
-                              <div className="font-bold text-sm">{model.f1Score}%</div>
-                            </div>
-                          </div>
+                  <div className="space-y-4">
+                    {/* Base Models */}
+                    {models.some(m => !m.isEnsemble) && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-muted uppercase tracking-widest mb-2">Base Learners</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          {models.filter(m => !m.isEnsemble).map((model) => {
+                            const isSelected = selectedModels.includes(model.id);
+                            return renderModelCard(model, isSelected);
+                          })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
+                    {/* Ensemble Models */}
+                    {models.some(m => m.isEnsemble) && (
+                      <div>
+                        <p className="text-xs font-semibold text-purple-700 uppercase tracking-widest mb-2">Stacking Ensembles (Meta-Learners)</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          {models.filter(m => m.isEnsemble).map((model) => {
+                            const isSelected = selectedModels.includes(model.id);
+                            return renderModelCard(model, isSelected);
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -596,6 +634,16 @@ export default function ModelComparisonPage() {
                     <ArrowLeft className="w-5 h-5 inline mr-2" />
                     Back to Selection
                   </button>
+                  {/* Linked flow: Explain Best Model → Explainability */}
+                  {bestModelId && (
+                    <button
+                      onClick={() => navigate('/explainability', { state: { preselectedModel: bestModelId } })}
+                      className="flex-1 px-6 py-3 rounded-lg bg-blue-600 text-white hover:shadow-lg transition-all font-medium"
+                    >
+                      <Eye className="w-5 h-5 inline mr-2" />
+                      Explain Best Model →
+                    </button>
+                  )}
                   <button
                     onClick={proceedToScorecard}
                     disabled={!bestModelId}
@@ -620,6 +668,7 @@ export default function ModelComparisonPage() {
             )}
           </div>
         </div>
+      </div>
     </DashboardLayout>
   );
 }

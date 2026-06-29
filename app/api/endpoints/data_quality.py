@@ -2,7 +2,7 @@
 Data Quality API Endpoints
 Platform-wide data quality metrics and monitoring
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Dict, Any
@@ -155,6 +155,101 @@ async def get_data_quality_summary(
             status_code=500,
             detail=f"Failed to get data quality summary: {str(e)}"
         )
+
+
+@router.get("/column-stats")
+async def get_column_quality_stats(
+    limit: int = Query(default=1000, ge=10, le=5000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """
+    Compute per-column missing data stats from actual patient records.
+    Returns overall quality metrics + top columns by missing %.
+    """
+    try:
+        from app.models.flexible_schema import FlexibleDatasetWide
+        import json as _json
+
+        records = (
+            db.query(FlexibleDatasetWide)
+            .filter(FlexibleDatasetWide.uploaded_by == current_user.id)
+            .order_by(FlexibleDatasetWide.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        total = len(records)
+        if total == 0:
+            return {
+                "total_records": 0,
+                "completeness_pct": 100.0,
+                "missing_pct": 0.0,
+                "quality_issues": 0,
+                "columns": [],
+            }
+
+        # Count missing values per column
+        col_missing: Dict[str, int] = {}
+        col_seen:    Dict[str, int] = {}
+
+        for rec in records:
+            data = rec.data or {}
+            if isinstance(data, str):
+                try:
+                    data = _json.loads(data)
+                except Exception:
+                    data = {}
+            for key, val in data.items():
+                if key.startswith("_"):
+                    continue
+                col_seen[key]    = col_seen.get(key, 0) + 1
+                is_missing = (
+                    val is None
+                    or val == ""
+                    or (isinstance(val, float) and val != val)  # NaN check
+                )
+                if is_missing:
+                    col_missing[key] = col_missing.get(key, 0) + 1
+
+        # Aggregate stats
+        total_cells   = sum(col_seen.values())
+        missing_cells = sum(col_missing.values())
+        overall_missing_pct = round((missing_cells / total_cells * 100), 1) if total_cells > 0 else 0.0
+        completeness_pct    = round(100.0 - overall_missing_pct, 1)
+
+        # Per-column results (only columns with any missing values)
+        columns = []
+        for col, cnt in sorted(col_missing.items(), key=lambda x: -x[1]):
+            seen = col_seen.get(col, total)
+            pct  = round((cnt / seen) * 100, 1) if seen > 0 else 0.0
+            if pct > 0:
+                columns.append({
+                    "name":          col,
+                    "missing_count": cnt,
+                    "total":         seen,
+                    "missing_pct":   pct,
+                })
+
+        quality_issues = len([c for c in columns if c["missing_pct"] > 10])
+
+        return {
+            "total_records":   total,
+            "completeness_pct": completeness_pct,
+            "missing_pct":     overall_missing_pct,
+            "quality_issues":  quality_issues,
+            "columns":         columns[:10],  # top 10
+        }
+
+    except Exception as e:
+        logger.error(f"[column-stats] error: {e}")
+        return {
+            "total_records":   0,
+            "completeness_pct": 100.0,
+            "missing_pct":     0.0,
+            "quality_issues":  0,
+            "columns":         [],
+        }
 
 
 @router.get("/datasets/{dataset_id}/quality")

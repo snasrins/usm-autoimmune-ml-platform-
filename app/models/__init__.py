@@ -18,6 +18,9 @@ from app.models.dataset import Dataset, EDAReport
 # ML Training Jobs (persistent storage)
 from app.models.training_job import TrainingJob, JobType, JobStatus
 
+# Async OCR Job tracking
+from app.models.ocr_job import OcrJob
+
 # NEW: Flexible JSONB-based models (NO HARDCODED SCHEMA)
 from app.models.flexible_data import (
     ImportPreviewStaging,
@@ -68,6 +71,9 @@ __all__ = [
     "TrainingJob",
     "JobType",
     "JobStatus",
+
+    # Async OCR Jobs
+    "OcrJob",
     
     # Flexible models (PRIMARY)
     "ImportPreviewStaging",

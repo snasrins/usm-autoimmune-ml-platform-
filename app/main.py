@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 # Optional imports for ML features
 try:
@@ -46,9 +47,27 @@ import app.api.endpoints.ml_utils as ml_utils
 import app.api.endpoints.data_quality as data_quality
 import app.api.endpoints.insights as insights
 import app.api.endpoints.category_management as category_management
+import app.api.endpoints.notifications as notifications
+
+# Ensure OcrJob table is registered with Base before create_all
+from app.models.ocr_job import OcrJob as _OcrJob  # noqa: F401
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: kick off Gemma background pre-load
+    try:
+        from app.services.gemma_conversational_service import start_gemma_preload
+        start_gemma_preload()
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning(f"Could not pre-load Gemma: {_e}")
+    yield
+    # Shutdown: nothing to clean up
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -56,7 +75,8 @@ app = FastAPI(
     description="Hybrid ML Platform for Autoimmune Disease Registry - Universiti Sains Malaysia",
     version=settings.VERSION,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # CORS Configuration - Restrict to Tailscale VPN only
@@ -133,6 +153,7 @@ app.include_router(category_management.router, prefix=f"{settings.API_V1_STR}/ca
 app.include_router(unstructured.router, prefix=f"{settings.API_V1_STR}/unstructured", tags=["Unstructured Pipeline"])
 app.include_router(eda.router, prefix=f"{settings.API_V1_STR}/eda", tags=["EDA & Preprocessing"])
 app.include_router(dataset_versions.router, prefix=f"{settings.API_V1_STR}/dataset-versions", tags=["Dataset Versioning"])
+app.include_router(notifications.router, prefix=f"{settings.API_V1_STR}/notifications", tags=["Notifications"])
 
 
 # Health check endpoint

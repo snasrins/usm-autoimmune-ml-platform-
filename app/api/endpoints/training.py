@@ -13,7 +13,7 @@ import json
 import io
 from datetime import datetime
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.api.deps import get_current_active_user, require_researcher_or_admin
 from app.services.minio_service import MinIOService
 from app.models.user import User
@@ -451,13 +451,43 @@ async def run_dataset_generation(job_id: str, params: dict, db: Session):
             logger.warning(f"⚠️  Failed to save ML dataset to MinIO: {e}")
             # Don't fail the job, just log warning
         
-        # Store result (for now in memory, TODO: save to database/MinIO)
+        # Store result in memory
         update_job_status(
             job_id,
             TrainingStatus.COMPLETED,
             completed_at=datetime.utcnow(),
             result=serializable_result
         )
+        
+        # Persist minimal result to database so it survives restarts
+        # Also pre-compute feature medians so feature-defaults endpoint works after restart
+        _feat_names = serializable_result.get('feature_names', [])
+        _x_scaled = serializable_result.get('X_train_scaled') or serializable_result.get('X_train', [])
+        _feature_medians = []
+        if _feat_names and _x_scaled:
+            try:
+                _arr = np.array(_x_scaled, dtype=float)
+                _meds = np.nanmedian(_arr, axis=0)
+                _feature_medians = [round(float(v), 4) if not (np.isnan(v) or np.isinf(v)) else 0.0
+                                    for v in _meds[:len(_feat_names)]]
+            except Exception:
+                pass  # non-fatal, defaults will fall back to MinIO
+
+        db_result = {
+            'minio_path': serializable_result.get('minio_path'),
+            'feature_names': _feat_names,
+            'feature_medians': _feature_medians,
+            'metadata': sanitize_for_json(serializable_result.get('metadata', {}))
+        }
+        update_job_status_db(
+            db,
+            job_id,
+            'completed',
+            result=sanitize_for_json(db_result)
+        )
+        # update_job_status_db also overwrites in-memory result; restore the full one
+        if job_id in training_jobs:
+            training_jobs[job_id]['result'] = serializable_result
         
         logger.info(f"Dataset generation job {job_id} completed")
         
@@ -576,6 +606,30 @@ async def run_base_model_training(job_id: str, params: dict, db: Session):
         training_time = time.time() - start_time
         result['training_time_seconds'] = training_time
         result['model_name'] = model_name
+
+        # ── Compute accuracy & specificity at the dispatch level ──────────────
+        # base_models.py only returns precision/recall/f1/AUC.
+        # accuracy and specificity (required by the research paper's evaluation
+        # table) are derived here from the saved fold model + test set.
+        if y_test is not None and result.get('fold_models'):
+            try:
+                from sklearn.metrics import accuracy_score, confusion_matrix as _cm
+                _test_model = result['fold_models'][0]
+                _X_test_eval = X_test_scaled if model_name in trainer.LINEAR_MODELS else X_test
+                _test_pred = _test_model.predict(_X_test_eval)
+                result['test_accuracy'] = float(accuracy_score(y_test, _test_pred))
+                # Macro-averaged specificity across classes (TN/(TN+FP) per class)
+                cm_arr = _cm(y_test, _test_pred)
+                specs = []
+                for _i in range(len(cm_arr)):
+                    _tn = int(cm_arr.sum() - cm_arr[_i, :].sum() - cm_arr[:, _i].sum() + cm_arr[_i, _i])
+                    _fp = int(cm_arr[:, _i].sum() - cm_arr[_i, _i])
+                    specs.append(_tn / (_tn + _fp) if (_tn + _fp) > 0 else 0.0)
+                result['test_specificity'] = float(np.mean(specs))
+                logger.info(f"Accuracy: {result['test_accuracy']:.4f}, Specificity: {result['test_specificity']:.4f}")
+            except Exception as _e:
+                logger.warning(f"Could not compute accuracy/specificity: {_e}")
+        # ─────────────────────────────────────────────────────────────────────
         
         # Remove non-serializable objects (model objects, numpy arrays)
         # But keep OOF predictions for ensemble training
@@ -595,6 +649,9 @@ async def run_base_model_training(job_id: str, params: dict, db: Session):
             'test_recall': float(result.get('test_recall', 0.0)) if 'test_recall' in result else None,
             'test_f1': float(result.get('test_f1', 0.0)) if 'test_f1' in result else None,
             'test_brier_score': float(result.get('test_brier_score', 0.0)) if 'test_brier_score' in result else None,
+            'test_accuracy': float(result.get('test_accuracy', 0.0)) if 'test_accuracy' in result else None,
+            'test_specificity': float(result.get('test_specificity', 0.0)) if 'test_specificity' in result else None,
+            'feature_names': list(X_train.columns) if hasattr(X_train, 'columns') and len(X_train.columns) > 0 else feature_names,
         }
         
         # Sanitize for JSON (handle NaN/Inf)
@@ -733,11 +790,18 @@ async def run_base_model_training(job_id: str, params: dict, db: Session):
 
 async def run_ensemble_training(job_id: str, params: dict, db: Session):
     """Background task to train stacking ensemble"""
+    # Background tasks outlive the request — create a fresh DB session so
+    # status updates are not silently dropped when the request session expires.
+    _bg_db = SessionLocal()
+    db = _bg_db
     try:
         update_job_status(job_id, TrainingStatus.RUNNING, started_at=datetime.utcnow())
         
         from app.ml.training.ensemble import StackingEnsemble
         import numpy as np
+        import io as _io
+        import joblib as _joblib
+        import pickle as _pickle
         
         base_model_jobs = params['base_model_jobs']
         dataset_id = params['dataset_id']
@@ -745,14 +809,60 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
         target_column = params.get('target_column', 'labels_disease_classification')
         batch_id = params.get('batch_id', dataset_id[:8])
         
+        # Initialize MinIO service early for fallback loading
+        try:
+            import os as _os
+            _minio_svc = MinIOService(
+                endpoint=_os.getenv("MINIO_ENDPOINT", "minio:9000"),
+                access_key=_os.getenv("MINIO_ROOT_USER", "minio_admin"),
+                secret_key=_os.getenv("MINIO_ROOT_PASSWORD", "MinIO_P@ssw0rd_2026"),
+                secure=_os.getenv("MINIO_SECURE", "false").lower() == "true"
+            )
+        except Exception as _e:
+            logger.warning(f"MinIO service init failed: {_e}. MinIO fallbacks will be unavailable.")
+            _minio_svc = None
+        
         logger.info(f"Training ensemble with {len(base_model_jobs)} base models from dataset {dataset_id}")
         logger.info(f"Meta-learner type: {meta_learner_type}")
         
         update_job_status_db(db, job_id, 'running')
-        
+
+        # --- Inline progress tracker for ensemble stages ---
+        _PSTEPS = [
+            ('load_oof',        'Load OOF predictions'),
+            ('load_data',       'Load dataset arrays'),
+            ('train_meta',      'Train meta-learner'),
+            ('test_eval',       'Evaluate test predictions'),
+            ('compute_metrics', 'Compute ensemble metrics'),
+            ('save',            'Save model to MinIO'),
+        ]
+        _done_steps: set = set()
+
+        def _progress(pct: int, label: str, active: str, detail: str = None):
+            steps = []
+            for _sid, _slabel in _PSTEPS:
+                if _sid in _done_steps:
+                    _st = 'done'
+                elif _sid == active:
+                    _st = 'running'
+                else:
+                    _st = 'pending'
+                _entry = {'id': _sid, 'label': _slabel, 'status': _st}
+                if _sid == active and detail:
+                    _entry['detail'] = detail
+                steps.append(_entry)
+            training_jobs[job_id]['progress'] = {
+                'percentage': pct,
+                'label': label,
+                'steps': steps,
+            }
+        # ------------------------------------------------
+        n_base = len(base_model_jobs)
+        _progress(5, f'Loading OOF predictions (0/{n_base} models)...', 'load_oof')
+
         # Validate all base model jobs are completed and load from DB if needed
         oof_predictions = {}
-        for bm_job_id in base_model_jobs:
+        for _oof_i, bm_job_id in enumerate(base_model_jobs):
             # Try in-memory first, then database
             if bm_job_id not in training_jobs:
                 logger.info(f"  Loading job {bm_job_id} from database...")
@@ -769,6 +879,7 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
             
             bm_result = bm_job.get('result', {})
             model_name = bm_result.get('model_name', f'model_{bm_job_id}')
+            _progress(5 + int((_oof_i / max(n_base, 1)) * 30), f'Loading OOF ({_oof_i + 1}/{n_base})...', 'load_oof', model_name)
             oof_preds = bm_result.get('oof_predictions')
             
             # If OOF predictions not in result, try loading from MinIO
@@ -786,7 +897,10 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
                 raise ValueError(f"No OOF predictions found in base model job {bm_job_id} (checked result, MinIO, and full_result)")
             
             oof_predictions[model_name] = np.array(oof_preds)
-        
+
+        _done_steps.add('load_oof')
+        _progress(40, 'Loading dataset arrays...', 'load_data')
+
         # Get y_train from dataset job - load from DB if needed
         if dataset_id not in training_jobs:
             logger.info(f"  Loading dataset job {dataset_id} from database...")
@@ -800,10 +914,44 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
         if dataset_job['status'] not in [TrainingStatus.COMPLETED, 'completed']:
             raise ValueError(f"Dataset job {dataset_id} not completed")
         
-        dataset_result = dataset_job['result']
+        dataset_result = dataset_job.get('result') or {}
+        
+        # If arrays are missing (job loaded from DB without them), load from MinIO
+        if 'y_train' not in dataset_result or 'X_test' not in dataset_result:
+            minio_path = dataset_result.get('minio_path')
+            if not minio_path:
+                raise ValueError(
+                    f"Dataset job {dataset_id} is missing array data and has no MinIO path. "
+                    "Please re-run dataset preparation."
+                )
+            if _minio_svc is None:
+                raise ValueError(f"Dataset arrays not in memory and MinIO is unavailable.")
+            logger.info(f"  Loading dataset arrays from MinIO: {minio_path}")
+            try:
+                response = _minio_svc.client.get_object("ml-datasets", minio_path)
+                dataset_artifact = _pickle.loads(response.read())
+                response.close()
+                response.release_conn()
+                def _to_list(x):
+                    import pandas as _pd
+                    if isinstance(x, _pd.DataFrame):
+                        return x.values.tolist()
+                    return x.tolist() if hasattr(x, 'tolist') else list(x)
+                dataset_result['X_train'] = _to_list(dataset_artifact['X_train'])
+                dataset_result['X_test'] = _to_list(dataset_artifact['X_test'])
+                dataset_result['y_train'] = _to_list(dataset_artifact['y_train'])
+                dataset_result['y_test'] = _to_list(dataset_artifact['y_test'])
+                dataset_result['feature_names'] = list(dataset_artifact.get('feature_names') or [])
+                logger.info(f"  Loaded dataset arrays from MinIO successfully")
+            except Exception as _minio_e:
+                raise ValueError(f"Failed to load dataset arrays from MinIO ({minio_path}): {_minio_e}")
+        
         y_train = pd.Series(np.array(dataset_result['y_train']))
         y_test = pd.Series(np.array(dataset_result['y_test']))
-        
+
+        _done_steps.add('load_data')
+        _progress(50, f'Training meta-learner ({meta_learner_type})...', 'train_meta')
+
         logger.info(f"OOF matrix shape: {list(oof_predictions.values())[0].shape}")
         logger.info(f"Target shape: {y_train.shape}")
         
@@ -821,7 +969,10 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
             ensemble_oof_auc = roc_auc_score(y_train, ensemble_oof_proba)
         else:
             ensemble_oof_auc = roc_auc_score(y_train, ensemble_oof_proba, multi_class='ovr', average='macro')
-        
+
+        _done_steps.add('train_meta')
+        _progress(62, f'Evaluating test predictions (0/{n_base} models)...', 'test_eval')
+
         # CRITICAL: Test set evaluation (USMA-44)
         test_predictions = {}
         
@@ -835,12 +986,39 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
         else:
             X_test = pd.DataFrame(X_test_array)
         
-        for bm_job_id in base_model_jobs:
+        for _test_i, bm_job_id in enumerate(base_model_jobs):
+            _test_pct = 62 + int((_test_i / max(n_base, 1)) * 22)
             bm_job = training_jobs[bm_job_id]
             bm_full_result = bm_job.get('full_result', {})
-            
+            _bm_label = (bm_job.get('result') or {}).get('model_name', f'model {_test_i + 1}')
+            _progress(_test_pct, f'Evaluating test predictions ({_test_i + 1}/{n_base})...', 'test_eval', _bm_label)
+
             # Get test predictions from base model
             fold_models = bm_full_result.get('fold_models', [])
+            
+            # Fallback: load fold models from MinIO if not in memory
+            if not fold_models:
+                artifact_paths = bm_job.get('artifact_paths', [])
+                if artifact_paths and _minio_svc is not None:
+                    bm_result = bm_job.get('result', {}) or {}
+                    _bm_name = bm_result.get('model_name', bm_job_id)
+                    logger.info(f"  Loading fold models from MinIO for {_bm_name} ({len(artifact_paths)} paths)...")
+                    for _path in artifact_paths:
+                        try:
+                            _resp = _minio_svc.client.get_object(_minio_svc.models_bucket, _path)
+                            _fm = _joblib.load(_io.BytesIO(_resp.read()))
+                            _resp.close()
+                            _resp.release_conn()
+                            fold_models.append(_fm)
+                        except Exception as _fe:
+                            logger.warning(f"  Could not load fold model from {_path}: {_fe}")
+            
+            if not fold_models:
+                bm_result = bm_job.get('result', {}) or {}
+                raise ValueError(
+                    f"No fold models available for base model '{bm_result.get('model_name', bm_job_id)}'. "
+                    "Re-train base models before running ensemble."
+                )
             
             # Average predictions across folds
             test_preds_list = []
@@ -850,14 +1028,33 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
             
             avg_test_pred = np.mean(test_preds_list, axis=0)
             model_name = bm_job['result'].get('model_name')
+
+            # Align test prediction shape with OOF prediction shape.
+            # OOF predictions may have been stored as 1-D (binary: positive class only).
+            # predict_proba always returns 2-D, so collapse to 1-D for binary models.
+            oof_for_model = oof_predictions.get(model_name)
+            if oof_for_model is not None and oof_for_model.ndim == 1 and avg_test_pred.ndim == 2:
+                avg_test_pred = avg_test_pred[:, -1]  # use last column (positive class)
+
             test_predictions[model_name] = avg_test_pred
         
+        _done_steps.add('test_eval')
+        _progress(88, 'Computing ensemble metrics...', 'compute_metrics')
+
         # Ensemble test predictions
         ensemble_test_proba = ensemble.predict_proba(test_predictions)
-        ensemble_test_pred = ensemble.predict(test_predictions)
+        # StackingEnsemble has no predict() method — derive from predict_proba
+        if hasattr(ensemble, 'predict'):
+            ensemble_test_pred = ensemble.predict(test_predictions)
+        elif np.ndim(ensemble_test_proba) == 1:
+            # Binary: positive-class probability → threshold at 0.5
+            ensemble_test_pred = (ensemble_test_proba >= 0.5).astype(int)
+        else:
+            # Multiclass: take argmax across class columns
+            ensemble_test_pred = np.argmax(ensemble_test_proba, axis=1)
         
         # Calculate test metrics
-        from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
+        from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, accuracy_score
         
         n_classes = len(np.unique(y_train))
         is_binary = n_classes == 2
@@ -876,20 +1073,39 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
         ensemble_test_precision = precision_score(y_test, ensemble_test_pred, average=avg_method, zero_division=0)
         ensemble_test_recall = recall_score(y_test, ensemble_test_pred, average=avg_method, zero_division=0)
         ensemble_test_f1 = f1_score(y_test, ensemble_test_pred, average=avg_method, zero_division=0)
-        
+        ensemble_test_accuracy = accuracy_score(y_test, ensemble_test_pred)
+
+        # Normalize model name keys (may be ModelName enums)
+        _bm_names_str = [k.value if hasattr(k, 'value') else str(k) for k in oof_predictions.keys()]
+
         result = {
+            # Standard keys — read by models/list and models/metrics
+            'oof_auc': float(ensemble_oof_auc),
+            'test_auc': float(ensemble_test_auc),
+            'test_precision': float(ensemble_test_precision),
+            'test_recall': float(ensemble_test_recall),
+            'test_f1': float(ensemble_test_f1),
+            'test_accuracy': float(ensemble_test_accuracy),
+            'train_samples': int(len(y_train)),
+            'n_features': int(len(feature_names) if feature_names else 0),
+            'feature_names': list(feature_names) if feature_names else [],
+            'base_model_job_ids': list(base_model_jobs),
+            # Ensemble-specific extras
             'ensemble_oof_auc': float(ensemble_oof_auc),
             'ensemble_test_auc': float(ensemble_test_auc),
             'ensemble_test_precision': float(ensemble_test_precision),
             'ensemble_test_recall': float(ensemble_test_recall),
             'ensemble_test_f1': float(ensemble_test_f1),
             'ensemble_test_brier_score': float(ensemble_test_brier),
-            'meta_weights': meta_weights,
-            'base_models_included': list(oof_predictions.keys()),
+            'meta_weights': {str(k): v for k, v in (meta_weights or {}).items()},
+            'base_models_included': _bm_names_str,
             'calibration_method': ensemble.calibration_method,
             'is_calibrated': ensemble.is_calibrated
         }
         
+        _done_steps.add('compute_metrics')
+        _progress(93, 'Saving model to MinIO...', 'save')
+
         # Persist ensemble to MinIO (USMA-75)
         try:
             import os
@@ -903,6 +1119,23 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
             
             version = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             
+            # Build base model MinIO info so the inference service can load them
+            base_model_minio_info = {}
+            for bm_job_id in base_model_jobs:
+                bm_job = training_jobs.get(bm_job_id, {})
+                bm_result = bm_job.get('result', {})
+                bm_model_name = bm_result.get('model_name', f'model_{bm_job_id}')
+                bm_artifact_paths = bm_job.get('artifact_paths', [])
+                if bm_artifact_paths:
+                    first_path = bm_artifact_paths[0]
+                    parts = first_path.split('/')
+                    if len(parts) >= 2:
+                        base_model_minio_info[bm_model_name] = {
+                            'minio_name': parts[0],
+                            'version': parts[1],
+                            'n_folds': len(bm_artifact_paths)
+                        }
+
             minio_path = minio_service.save_model(
                 model=ensemble,
                 model_name=f"{batch_id}_ensemble",
@@ -914,13 +1147,14 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
                     'model_type': 'stacking_ensemble',
                     'meta_learner_type': meta_learner_type,
                     'base_models': list(oof_predictions.keys()),
+                    'base_model_minio_info': base_model_minio_info,
                     'ensemble_oof_auc': float(ensemble_oof_auc),
                     'ensemble_test_auc': float(ensemble_test_auc),
                     'ensemble_test_f1': float(ensemble_test_f1),
                     'ensemble_test_brier': float(ensemble_test_brier),
                     'meta_weights': meta_weights,
                     'calibration_method': ensemble.calibration_method,
-                    'feature_names': feature_names if feature_names else [],  # ✅ FIXED: Add feature names
+                    'feature_names': feature_names if feature_names else [],
                     'created_at': datetime.utcnow().isoformat()
                 }
             )
@@ -941,7 +1175,21 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
             completed_at=datetime.utcnow(),
             result=result
         )
-        
+
+        # Persist completed ensemble to DB so models/list can return it
+        try:
+            update_job_status_db(
+                db, job_id, 'completed',
+                result=result,
+                oof_auc=result['oof_auc'],
+                test_auc=result['test_auc'],
+                test_f1=result['test_f1'],
+                artifact_paths=[result.get('model_artifact_path', '')] if result.get('model_artifact_path') else [],
+                error=None
+            )
+        except Exception as _db_e:
+            logger.error(f"Could not persist completed ensemble status to DB: {_db_e}")
+
         logger.info(f"Ensemble training job {job_id} completed with OOF AUC: {ensemble_oof_auc:.4f}")
         
     except Exception as e:
@@ -952,6 +1200,16 @@ async def run_ensemble_training(job_id: str, params: dict, db: Session):
             completed_at=datetime.utcnow(),
             error_message=str(e)
         )
+        # Persist failed status to DB (uses fresh session so it won't be expired)
+        try:
+            update_job_status_db(db, job_id, 'failed', error=str(e)[:1000])
+        except Exception as _db_e:
+            logger.error(f"Could not persist failed status to DB for job {job_id}: {_db_e}")
+    finally:
+        try:
+            _bg_db.close()
+        except Exception:
+            pass
 
 
 # ===== API Endpoints =====
@@ -1049,6 +1307,16 @@ async def train_ensemble(
     Train stacking ensemble meta-learner from base model predictions
     Persistent storage: job metadata in PostgreSQL, ensemble model in MinIO
     """
+    # Guard: reject before creating a ghost job that will fail instantly
+    if not request.base_model_jobs or len(request.base_model_jobs) < 2:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ensemble requires at least 2 completed base model jobs. "
+                   f"Received {len(request.base_model_jobs or [])}. "
+                   f"Train base models first, then retry."
+        )
+
     job_id = create_job_db(
         db=db,
         job_type='ensemble',
@@ -1108,36 +1376,137 @@ async def get_training_status(
     Get status of a training job
     Loads from PostgreSQL if not in memory (survives restart)
     """
-    # Try in-memory first, then database
-    if job_id not in training_jobs:
-        logger.info(f"Job {job_id} not in memory, loading from database...")
-        job = get_job_from_db(db, job_id)
-        if not job:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Training job {job_id} not found"
-            )
-        # Cache in memory for subsequent requests
-        training_jobs[job_id] = job
-    else:
-        job = training_jobs[job_id]
-    
-    # Sanitize result for JSON serialization
-    result = job.get('result')
-    if result is not None:
-        result = sanitize_for_json(result)
-    
-    return TrainingJobStatus(
-        job_id=job['job_id'],
-        status=job['status'],
-        job_type=job['job_type'],
-        created_at=job['created_at'],
-        started_at=job.get('started_at'),
-        completed_at=job.get('completed_at'),
-        progress=job.get('progress'),
-        result=result,
-        error_message=job.get('error_message')
-    )
+    try:
+        # Try in-memory first, then database
+        if job_id not in training_jobs:
+            logger.info(f"Job {job_id} not in memory, loading from database...")
+            job = get_job_from_db(db, job_id)
+            if not job:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Training job {job_id} not found"
+                )
+            # Cache in memory for subsequent requests
+            training_jobs[job_id] = job
+        else:
+            job = training_jobs[job_id]
+        
+        # Sanitize result and progress for JSON serialization
+        result = job.get('result')
+        if result is not None:
+            result = sanitize_for_json(result)
+        
+        progress = job.get('progress')
+        if progress is not None:
+            progress = sanitize_for_json(progress)
+        
+        return TrainingJobStatus(
+            job_id=job['job_id'],
+            status=job['status'],
+            job_type=job['job_type'],
+            created_at=job['created_at'],
+            started_at=job.get('started_at'),
+            completed_at=job.get('completed_at'),
+            progress=progress,
+            result=result,
+            error_message=job.get('error_message')
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting status for job {job_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve job status: {str(e)}"
+        )
+
+
+@router.get("/train/jobs/{job_id}/feature-defaults")
+async def get_feature_defaults(
+    job_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Return per-feature median values from the training dataset for a trained model.
+    Used by the SHAP explainability UI to pre-populate input with representative
+    values instead of all-zero defaults.
+    """
+    try:
+        # --- Step 1: resolve dataset_id from the model job ---
+        if job_id not in training_jobs:
+            job_db = get_job_from_db(db, job_id)
+            if not job_db:
+                return {"defaults": {}, "note": "Job not found"}
+            training_jobs[job_id] = job_db
+
+        model_job = training_jobs[job_id]
+        params = model_job.get('params') or {}
+        dataset_id = params.get('dataset_id')
+
+        if not dataset_id:
+            return {"defaults": {}, "note": "No dataset associated with this model job"}
+
+        # --- Step 2: load the dataset generation job ---
+        if dataset_id not in training_jobs:
+            ds_job_db = get_job_from_db(db, dataset_id)
+            if not ds_job_db:
+                return {"defaults": {}, "note": "Dataset job not found"}
+            training_jobs[dataset_id] = ds_job_db
+
+        dataset_job = training_jobs[dataset_id]
+        dataset_result = dataset_job.get('result') or {}
+        feature_names = dataset_result.get('feature_names', [])
+        X_train_raw = dataset_result.get('X_train_scaled') or dataset_result.get('X_train')
+
+        # --- Step 3a: use pre-computed medians stored in DB result (fast path) ---
+        stored_medians = dataset_result.get('feature_medians', [])
+        if feature_names and stored_medians and len(stored_medians) == len(feature_names):
+            defaults = {}
+            for name, val in zip(feature_names, stored_medians):
+                v = float(val) if val is not None else 0.0
+                if np.isnan(v) or np.isinf(v):
+                    v = 0.0
+                defaults[str(name)] = v
+            return {"defaults": defaults, "n_features": len(defaults), "note": "Median values from training data"}
+
+        # --- Step 3b: fallback — load full artifact from MinIO if not in memory ---
+        if not feature_names or X_train_raw is None:
+            minio_path = dataset_result.get('minio_path')
+            if not minio_path:
+                return {"defaults": {}, "note": "Training data not available"}
+            try:
+                import pickle as _pickle
+                _minio = get_minio_service()
+                _resp = _minio.client.get_object("ml-datasets", minio_path)
+                _artifact = _pickle.loads(_resp.read())
+                _resp.close()
+                _resp.release_conn()
+                feature_names = list(_artifact.get('feature_names') or [])
+                X_train_raw = _artifact.get('X_train_scaled') or _artifact.get('X_train')
+            except Exception as _minio_err:
+                logger.warning(f"Could not load dataset from MinIO for feature-defaults: {_minio_err}")
+                return {"defaults": {}, "note": "Training data not available"}
+
+        if not feature_names or X_train_raw is None:
+            return {"defaults": {}, "note": "No feature data found"}
+
+        # --- Step 4: compute per-feature medians ---
+        X_arr = np.array(X_train_raw, dtype=float)
+        medians = np.nanmedian(X_arr, axis=0)
+
+        defaults = {}
+        for i, name in enumerate(feature_names):
+            val = float(medians[i]) if i < len(medians) else 0.0
+            if np.isnan(val) or np.isinf(val):
+                val = 0.0
+            defaults[str(name)] = round(val, 4)
+
+        return {"defaults": defaults, "n_features": len(defaults), "note": "Median values from training data"}
+
+    except Exception as e:
+        logger.error(f"Error computing feature defaults for job {job_id}: {e}", exc_info=True)
+        return {"defaults": {}, "note": str(e)}
 
 
 @router.get("/models/list", response_model=ModelListResponse)
@@ -1176,6 +1545,9 @@ async def list_trained_models(
             ]))
         
         # Sort by completion time (newest first) and limit
+        # Scope to current user (admins see all)
+        if not getattr(current_user, 'is_admin', False):
+            query = query.filter(TrainingJob.user_id == current_user.id)
         db_jobs = query.order_by(TrainingJob.completed_at.desc()).limit(limit).all()
         
         # Convert to model info
@@ -1192,9 +1564,10 @@ async def list_trained_models(
                     model_type_str = 'ensemble'
                     model_name = 'stacking_ensemble'
                 
-                # Extract metrics safely
-                oof_auc = result.get('oof_auc')
-                test_auc = result.get('test_auc')
+                # Extract metrics safely — ensemble uses standard keys now,
+                # but fall back to legacy 'ensemble_*' keys for old records
+                oof_auc = result.get('oof_auc') or result.get('ensemble_oof_auc')
+                test_auc = result.get('test_auc') or result.get('ensemble_test_auc')
                 
                 # Convert to float if needed
                 if oof_auc is not None and not isinstance(oof_auc, (int, float)):
@@ -1209,6 +1582,18 @@ async def list_trained_models(
                     except:
                         test_auc = None
                 
+                # Extract classification metrics safely
+                def _safe_float(v):
+                    if v is None: return None
+                    try: return float(v)
+                    except: return None
+
+                # Feature names: try multiple keys in result
+                raw_features = (result.get('feature_names') or
+                                result.get('selected_features') or
+                                result.get('dataset_feature_names') or [])
+                feature_names_list = [str(f) for f in raw_features] if raw_features else None
+
                 model_info = TrainedModelInfo(
                     model_id=job.job_id,
                     model_name=model_name,
@@ -1219,9 +1604,17 @@ async def list_trained_models(
                     test_samples=result.get('test_samples', 0),
                     oof_auc=oof_auc,
                     test_auc=test_auc,
+                    test_precision=_safe_float(result.get('test_precision')),
+                    test_recall=_safe_float(result.get('test_recall')),
+                    test_f1=_safe_float(result.get('test_f1')),
+                    test_accuracy=_safe_float(result.get('test_accuracy')),
+                    test_specificity=_safe_float(result.get('test_specificity')),
                     hyperparameters=result.get('best_params'),
                     feature_count=result.get('n_features', 0),
-                    artifact_path=result.get('model_artifact_path', '')
+                    artifact_path=result.get('model_artifact_path', ''),
+                    feature_names=feature_names_list,
+                    base_model_ids=result.get('base_model_job_ids') or job.params.get('base_model_jobs', []) or [],
+                    in_ensemble=(model_type_str == 'ensemble')
                 )
                 models.append(model_info)
             except Exception as e:
@@ -1318,22 +1711,39 @@ async def get_model_metrics(
     Returns:
         Comprehensive evaluation metrics
     """
-    # Find the training job
-    if model_id not in training_jobs:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Model {model_id} not found"
-        )
-    
-    job = training_jobs[model_id]
-    
-    if job['status'] != TrainingStatus.COMPLETED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Model training not completed (status: {job['status']})"
-        )
-    
-    result = job.get('result', {})
+    # Find the training job — check memory first, fall back to DB
+    result = {}
+    if model_id in training_jobs:
+        job = training_jobs[model_id]
+        if job['status'] != TrainingStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Model training not completed (status: {job['status']})"
+            )
+        result = job.get('result', {})
+    else:
+        # Fallback: load from DB (handles backend restarts)
+        db_job = db.query(TrainingJob).filter(TrainingJob.job_id == model_id).first()
+        if not db_job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model {model_id} not found"
+            )
+        if db_job.status.value != 'completed':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Model training not completed (status: {db_job.status.value})"
+            )
+        result = db_job.result or {}
+        # Also restore denormalized metrics from DB columns if result is sparse
+        if not result.get('oof_auc') and db_job.oof_auc:
+            result['oof_auc'] = db_job.oof_auc
+        if not result.get('test_auc') and db_job.test_auc:
+            result['test_auc'] = db_job.test_auc
+        if not result.get('f1_score') and db_job.test_f1:
+            result['f1_score'] = db_job.test_f1
+        if not result.get('model_name') and db_job.model_name:
+            result['model_name'] = db_job.model_name
     
     # Extract metrics from training result
     model_name = result.get('model_name', 'unknown')
@@ -1469,8 +1879,10 @@ async def get_training_history(
         # Map string to JobType enum
         job_type_map = {
             'dataset_generation': JobType.DATASET_GENERATION,
-            'base_model_training': JobType.BASE_MODEL_TRAINING,
-            'ensemble_training': JobType.ENSEMBLE_TRAINING
+            'base_model': JobType.BASE_MODEL,
+            'base_model_training': JobType.BASE_MODEL,
+            'ensemble': JobType.ENSEMBLE,
+            'ensemble_training': JobType.ENSEMBLE
         }
         if job_type in job_type_map:
             query = query.filter(TrainingJob.job_type == job_type_map[job_type])
@@ -1487,6 +1899,9 @@ async def get_training_history(
             query = query.filter(TrainingJob.status == status_map[status_filter])
     
     # Sort by creation time (newest first) and limit
+    # Scope to current user (admins see all)
+    if not getattr(current_user, 'is_admin', False):
+        query = query.filter(TrainingJob.user_id == current_user.id)
     db_jobs = query.order_by(TrainingJob.created_at.desc()).limit(limit).all()
     
     # Build history items
@@ -1512,8 +1927,11 @@ async def get_training_history(
             status=status,
             created_at=job.created_at,
             completed_at=job.completed_at,
-            oof_auc=result.get('oof_auc') or result.get('cv_auc'),
+            oof_auc=job.oof_auc or result.get('oof_auc') or result.get('cv_auc'),
+            test_auc=job.test_auc or result.get('test_auc'),
+            test_f1=job.test_f1 or result.get('test_f1'),
             training_time_seconds=training_time or result.get('training_time_seconds'),
+            dataset_id=job.dataset_id,
             user_id=job.user_id,
             username=job.user.username if job.user else None,
             user_full_name=job.user.full_name if job.user else None
@@ -1638,9 +2056,9 @@ async def sync_models_from_minio(
                 
                 # Determine job type
                 if model_name.lower() in ['stacking_ensemble', 'ensemble']:
-                    job_type = JobType.ENSEMBLE_TRAINING
+                    job_type = JobType.ENSEMBLE
                 else:
-                    job_type = JobType.BASE_MODEL_TRAINING
+                    job_type = JobType.BASE_MODEL
                 
                 # Extract metrics from metadata
                 oof_auc = metadata.get('oof_auc') or metadata.get('cv_auc')

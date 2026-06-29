@@ -411,7 +411,7 @@ export const flexibleAPI = {
   editCell: async (sessionId, stagingId, columnName, newValue) => {
     const response = await api.patch(
       `/flexible/preview/${sessionId}/row/${stagingId}`,
-      { column_name: columnName, new_value: newValue }
+      { field_name: columnName, new_value: newValue }
     );
     return response.data;
   },
@@ -433,8 +433,10 @@ export const flexibleAPI = {
    * @param {string} datasetName - Optional final dataset name
    * @returns {Promise<{success: boolean, batch_id: string, statistics: object}>}
    */
-  saveToDatabase: async (sessionId, datasetName = null) => {
-    const payload = datasetName ? { final_dataset_name: datasetName } : {};
+  saveToDatabase: async (sessionId, datasetName = null, excludedColumns = []) => {
+    const payload = {};
+    if (datasetName) payload.final_dataset_name = datasetName;
+    if (excludedColumns.length > 0) payload.excluded_columns = excludedColumns;
     const response = await api.post(`/flexible/preview/${sessionId}/save`, payload);
     return response.data;
   },
@@ -454,6 +456,31 @@ export const flexibleAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     
+    return response.data;
+  },
+
+  /**
+   * Submit unstructured file for ASYNC OCR processing (non-blocking).
+   * Returns immediately with a job_id.  Poll getOcrStatus() for completion.
+   * @param {File} file
+   * @returns {Promise<{job_id: string, status: string, filename: string, message: string}>}
+   */
+  uploadUnstructuredAsync: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/unstructured/upload-async', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  /**
+   * Poll the status of an async OCR job.
+   * @param {string} jobId
+   * @returns {Promise<{job_id, status, filename, result, error, processing_time_seconds}>}
+   */
+  getOcrStatus: async (jobId) => {
+    const response = await api.get(`/unstructured/ocr-status/${jobId}`);
     return response.data;
   },
 
@@ -530,18 +557,8 @@ export const flexibleAPI = {
     return response.data;
   },
 
-  /**
-   * Get preview data from a saved dataset (FlexibleDatasetWide table)
-   * Used for EDA and data exploration of finalized datasets
-   * @param {string} batchId - Import batch ID
-   * @param {number} page - Page number (1-indexed)
-   * @param {number} pageSize - Rows per page
-   * @returns {Promise<{session_id: string, total_rows: number, rows: array, schema: object}>}
-   */
-  getSavedDatasetPreview: async (batchId, page = 1, pageSize = 100) => {
-    const response = await api.get(`/flexible/saved-dataset/${batchId}/preview`, {
-      params: { page, page_size: pageSize }
-    });
+  getBatchSummary: async (batchId) => {
+    const response = await api.get(`/flexible/batch/${batchId}/summary`);
     return response.data;
   },
 };
@@ -905,6 +922,50 @@ export const mlAPI = {
   },
 
   /**
+   * Get all available feature column names for a batch (numeric + categorical).
+   * Replaces the static placeholder list in the clinician selection UI.
+   * @param {string} importBatchId - Batch ID
+   * @param {string} targetColumn - Target/label column to exclude
+   * @returns {Promise<{all_features: string[], numeric_features: string[], categorical_features: string[], n_rows: number}>}
+   */
+  getFeatureColumns: async (importBatchId, targetColumn = 'labels_disease_classification') => {
+    const response = await api.get(`/ml/feature-columns/${importBatchId}`, {
+      params: { target_column: targetColumn }
+    });
+    return response.data;
+  },
+
+  /**
+   * Detect correlated feature pairs above a Pearson |r| threshold.
+   * Returns pairs to review and recommended features to remove.
+   * @param {string} importBatchId - Batch ID
+   * @param {number} threshold - Correlation threshold 0–1 (default 0.85)
+   * @param {string} targetColumn - Target/label column to exclude
+   * @returns {Promise<{correlated_pairs: Array, features_to_remove: string[], features_to_keep: string[]}>}
+   */
+  detectCorrelatedFeatures: async (importBatchId, threshold = 0.85, targetColumn = 'labels_disease_classification') => {
+    const response = await api.post(`/ml/detect-correlations/${importBatchId}`, null, {
+      params: { threshold, target_column: targetColumn }
+    });
+    return response.data;
+  },
+
+  /**
+   * Run LASSO (L1 LogisticRegression) feature selection on a labelled dataset.
+   * Returns all features ranked by mean |coefficient|, selected vs removed.
+   * @param {string} importBatchId - Batch ID
+   * @param {number} alpha - Regularization strength (lower = keep more features)
+   * @param {string} targetColumn - Label column to predict
+   * @returns {Promise<{selected_features: string[], features: Array, n_features_selected: number}>}
+   */
+  runLassoSelection: async (importBatchId, alpha = 0.00001, targetColumn = 'labels_disease_classification') => {
+    const response = await api.post(`/ml/lasso-feature-selection/${importBatchId}`, null, {
+      params: { alpha, target_column: targetColumn }
+    });
+    return response.data;
+  },
+
+  /**
    * Get training job status
    * @param {string} jobId - Training job ID
    * @returns {Promise<Object>}
@@ -1083,14 +1144,6 @@ export const mlAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     
-    return response.data;
-  },
-
-  batchPredictByDataset: async (modelId, datasetId) => {
-    const response = await api.post('/ml/predict/batch', {
-      model_id: modelId,
-      dataset_id: datasetId,
-    });
     return response.data;
   },
 
