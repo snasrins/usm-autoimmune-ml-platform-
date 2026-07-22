@@ -12,7 +12,7 @@ Uses Google's Gemma-4-E4B model from Hugging Face for:
 Model: google/gemma-4-E4B
 """
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from typing import Dict, List, Optional, Any
 import logging
 import threading
@@ -43,9 +43,33 @@ def _load_gemma_background():
             logger.info(f"[Gemma] Starting background load of {model_id} on {device}...")
             tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
             if device.type == "cuda":
+                # This checkpoint is a multimodal model (vision + audio + language towers),
+                # but only the language model + lm_head are used for text chat. The GPU is
+                # shared with other tenants' processes, so device_map="auto" would try to fit
+                # the whole multimodal model and silently offload the language model itself
+                # onto the CPU when VRAM is tight. Instead: pin just the text-generation path
+                # to GPU (4-bit quantized to fit in limited free VRAM) and leave the unused
+                # vision/audio towers on CPU, since they're never touched by text-only chat.
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    llm_int8_enable_fp32_cpu_offload=True,
+                )
+                text_device_map = {
+                    "model.language_model": 0,
+                    "lm_head": 0,
+                    "model.vision_tower": "cpu",
+                    "model.audio_tower": "cpu",
+                    "model.embed_vision": "cpu",
+                    "model.embed_audio": "cpu",
+                }
                 mdl = AutoModelForCausalLM.from_pretrained(
-                    model_id, torch_dtype=torch.float16,
-                    device_map="auto", trust_remote_code=True
+                    model_id,
+                    quantization_config=bnb_config,
+                    device_map=text_device_map,
+                    trust_remote_code=True,
                 )
             else:
                 mdl = AutoModelForCausalLM.from_pretrained(
