@@ -148,7 +148,7 @@ export default function ModelExplainabilityPageConnected() {
       <PageHeader title="Model Explainability" subtitle="Explainability (SHAP + AI)" user={user} />
       <ModelingStepsNav />
 
-      <main className="flex-1 overflow-y-auto p-6 bg-gradient-to-br from-[#f5f3ff] via-[#faf9fc] to-[#f0edff]" style={{ zoom: 0.9 }}>
+      <main className="flex-1 overflow-y-auto p-6" style={{ zoom: 0.9, background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)' }}>
         <div className="max-w-7xl mx-auto space-y-6">
           
           {/* Error Display */}

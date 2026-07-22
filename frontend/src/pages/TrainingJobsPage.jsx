@@ -577,7 +577,7 @@ export default function TrainingJobsPage() {
     <DashboardLayout>
       <PageHeader title="Training Jobs" subtitle="Training" user={user} />
       <ModelingStepsNav />
-      <div className="h-screen flex flex-col" style={{ zoom: 0.75, background: '#FAFBFC' }}>
+      <div className="h-screen flex flex-col" style={{ zoom: 0.75, background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)' }}>
 
         {/* Stats Bar */}
         {activeRun && (
