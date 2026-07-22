@@ -276,8 +276,6 @@ const ChatbotWidget = () => {
     setConversationHistory([]);
   };
 
-  const isGemmaActive = modelInfo.model === 'gemma-4-E4B';
-
   if (!isOpen) {
     return (
       <div className="dr-myra-dock" onClick={() => setIsOpen(true)}>
@@ -309,12 +307,7 @@ const ChatbotWidget = () => {
             <div className="assistant-name">Dr. Myra</div>
             <div className="assistant-status">
               <span className="status-indicator"></span>
-              <span className="status-text">
-                {isGemmaActive
-                  ? <span className="model-badge gemma"><Zap size={10} /> Gemma AI · {modelInfo.device}</span>
-                  : <span className="model-badge fallback"><Cpu size={10} /> Knowledge Base</span>
-                }
-              </span>
+              <span className="status-text">Online</span>
             </div>
           </div>
         </div>

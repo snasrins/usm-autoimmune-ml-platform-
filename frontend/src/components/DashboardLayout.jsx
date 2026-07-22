@@ -210,7 +210,7 @@ export default function DashboardLayout({ children }) {
               <div className={`px-4 pb-2 transition-opacity duration-150 pointer-events-none ${
                 sidebarExpanded ? 'opacity-100' : 'opacity-0'
               }`}>
-                <span className="text-[9px] font-medium tracking-[0.12em] uppercase text-white/30 whitespace-nowrap">
+                <span className="text-[10px] font-medium tracking-[0.12em] uppercase text-white/30 whitespace-nowrap">
                   {section.label}
                 </span>
               </div>
@@ -260,7 +260,7 @@ export default function DashboardLayout({ children }) {
                         />
                       )}
                       <Icon className="w-[15px] h-[15px] flex-shrink-0 pointer-events-none" strokeWidth={1.5} />
-                      <span className={`text-[13px] font-normal transition-opacity duration-150 whitespace-nowrap pointer-events-none ${
+                      <span className={`text-[14px] font-normal transition-opacity duration-150 whitespace-nowrap pointer-events-none ${
                         sidebarExpanded ? 'opacity-100' : 'opacity-0'
                       }`}>
                         {item.label}
