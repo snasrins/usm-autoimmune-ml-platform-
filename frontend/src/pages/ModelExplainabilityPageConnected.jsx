@@ -145,10 +145,11 @@ export default function ModelExplainabilityPageConnected() {
 
   return (
     <DashboardLayout>
+      <div className="flex-1 flex flex-col" style={{ background: '#FFFFFF' }}>
       <PageHeader title="Model Explainability" subtitle="Explainability (SHAP + AI)" user={user} />
       <ModelingStepsNav />
 
-      <main className="flex-1 overflow-y-auto p-6" style={{ zoom: 0.9, background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)' }}>
+      <main className="flex-1 overflow-y-auto p-6" style={{ zoom: 0.9, background: '#FFFFFF' }}>
         <div className="max-w-7xl mx-auto space-y-6">
           
           {/* Error Display */}
@@ -467,6 +468,7 @@ export default function ModelExplainabilityPageConnected() {
           )}
         </div>
       </main>
+      </div>
     </DashboardLayout>
   );
 }

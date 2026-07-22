@@ -287,9 +287,10 @@ export default function ModelComparisonPage() {
 
   return (
     <DashboardLayout>
+      <div className="flex-1 flex flex-col" style={{ background: '#FFFFFF' }}>
       <PageHeader title="Model Comparison" subtitle="Comparison" user={user} />
       <ModelingStepsNav />
-      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
+      <div className="min-h-screen" style={{ background: '#FFFFFF', zoom: 0.75 }}>
         <div className="px-4 pt-4 pb-2">
           <div className="max-w-7xl mx-auto">
             <div className="flex items-center justify-end">
@@ -668,6 +669,7 @@ export default function ModelComparisonPage() {
             )}
           </div>
         </div>
+      </div>
       </div>
     </DashboardLayout>
   );

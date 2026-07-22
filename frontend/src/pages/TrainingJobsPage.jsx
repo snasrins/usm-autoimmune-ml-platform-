@@ -575,9 +575,10 @@ export default function TrainingJobsPage() {
 
   return (
     <DashboardLayout>
+      <div className="flex-1 flex flex-col" style={{ background: '#FFFFFF' }}>
       <PageHeader title="Training Jobs" subtitle="Training" user={user} />
       <ModelingStepsNav />
-      <div className="h-screen flex flex-col" style={{ zoom: 0.75, background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)' }}>
+      <div className="h-screen flex flex-col" style={{ zoom: 0.75, background: '#FFFFFF' }}>
 
         {/* Stats Bar */}
         {activeRun && (
@@ -943,6 +944,7 @@ export default function TrainingJobsPage() {
           onClose={() => setShowComparison(false)}
         />
       )}
+      </div>
     </DashboardLayout>
   );
 }

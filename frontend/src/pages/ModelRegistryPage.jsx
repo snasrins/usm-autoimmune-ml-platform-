@@ -302,9 +302,10 @@ export default function ModelRegistryPage() {
 
   return (
     <DashboardLayout>
+      <div className="flex-1 flex flex-col" style={{ background: '#FFFFFF' }}>
       <PageHeader title="Model Registry" subtitle="Registry" user={user} />
       <ModelingStepsNav />
-      <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
+      <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF', zoom: 0.75 }}>
         {/* Action Bar */}
         <div className="px-6 py-4 bg-white/60 backdrop-blur-sm border-b border-white/40">
           <div>
@@ -560,6 +561,7 @@ export default function ModelRegistryPage() {
           error={ensembleError}
         />
       )}
+      </div>
     </DashboardLayout>
   );
 }
