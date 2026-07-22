@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X, Send, Minimize2, Sparkles, Trash2, Cpu, Zap } from 'lucide-react';
+import { MessageCircle, X, Send, Minimize2, Sparkles, Trash2 } from 'lucide-react';
 import './DrMyra.css';
 import { explainabilityAPI } from '../services/api-complete';
 
@@ -352,14 +352,6 @@ const ChatbotWidget = () => {
                   </div>
                   <div className="message-meta">
                     <span className="message-time">{msg.timestamp}</span>
-                    {msg.sender === 'dr-myra' && msg.modelInfo && (
-                      <span className={`msg-model-badge ${msg.modelInfo.model === 'gemma-4-E4B' ? 'gemma' : 'fallback'}`}>
-                        {msg.modelInfo.model === 'gemma-4-E4B'
-                          ? <><Zap size={9} /> Gemma · {msg.modelInfo.device}</>
-                          : <><Cpu size={9} /> Knowledge Base</>
-                        }
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>

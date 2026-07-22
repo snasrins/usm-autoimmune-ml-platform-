@@ -135,30 +135,30 @@ export default function ModelComparisonPage() {
           <div className="flex items-center gap-2 mb-1">
             <h4 className="font-semibold text-black-text">{model.name}</h4>
             {model.isEnsemble && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
                 Ensemble
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-muted">{model.algorithm}</p>
+          <p className="text-sm text-gray-muted">{model.algorithm}</p>
         </div>
         {isSelected && <CheckCircle className="w-5 h-5 text-purple-primary flex-shrink-0" />}
       </div>
       <div className="grid grid-cols-4 gap-2">
         <div className="text-center">
-          <div className="text-xs text-gray-muted">Accuracy</div>
+          <div className="text-sm text-gray-muted">Accuracy</div>
           <div className="font-bold text-sm text-purple-primary">{model.accuracy}%</div>
         </div>
         <div className="text-center">
-          <div className="text-xs text-gray-muted">Precision</div>
+          <div className="text-sm text-gray-muted">Precision</div>
           <div className="font-bold text-sm">{model.precision}%</div>
         </div>
         <div className="text-center">
-          <div className="text-xs text-gray-muted">Recall</div>
+          <div className="text-sm text-gray-muted">Recall</div>
           <div className="font-bold text-sm">{model.recall}%</div>
         </div>
         <div className="text-center">
-          <div className="text-xs text-gray-muted">F1</div>
+          <div className="text-sm text-gray-muted">F1</div>
           <div className="font-bold text-sm">{model.f1Score}%</div>
         </div>
       </div>
@@ -370,7 +370,7 @@ export default function ModelComparisonPage() {
                     {/* Base Models */}
                     {models.some(m => !m.isEnsemble) && (
                       <div>
-                        <p className="text-xs font-semibold text-gray-muted uppercase tracking-widest mb-2">Base Learners</p>
+                        <p className="text-sm font-semibold text-gray-muted uppercase tracking-widest mb-2">Base Learners</p>
                         <div className="grid grid-cols-2 gap-4">
                           {models.filter(m => !m.isEnsemble).map((model) => {
                             const isSelected = selectedModels.includes(model.id);
@@ -382,7 +382,7 @@ export default function ModelComparisonPage() {
                     {/* Ensemble Models */}
                     {models.some(m => m.isEnsemble) && (
                       <div>
-                        <p className="text-xs font-semibold text-purple-700 uppercase tracking-widest mb-2">Stacking Ensembles (Meta-Learners)</p>
+                        <p className="text-sm font-semibold text-purple-700 uppercase tracking-widest mb-2">Stacking Ensembles (Meta-Learners)</p>
                         <div className="grid grid-cols-2 gap-4">
                           {models.filter(m => m.isEnsemble).map((model) => {
                             const isSelected = selectedModels.includes(model.id);
@@ -422,7 +422,7 @@ export default function ModelComparisonPage() {
                   <div className="flex gap-1 bg-white rounded-lg border border-gray-200 p-1">
                     <button
                       onClick={() => setChartType('bar')}
-                      className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                         chartType === 'bar' 
                           ? 'bg-purple-primary text-white' 
                           : 'text-gray-600 hover:bg-gray-100'
@@ -432,7 +432,7 @@ export default function ModelComparisonPage() {
                     </button>
                     <button
                       onClick={() => setChartType('radar')}
-                      className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                         chartType === 'radar' 
                           ? 'bg-purple-primary text-white' 
                           : 'text-gray-600 hover:bg-gray-100'
@@ -442,7 +442,7 @@ export default function ModelComparisonPage() {
                     </button>
                     <button
                       onClick={() => setChartType('line')}
-                      className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                         chartType === 'line' 
                           ? 'bg-purple-primary text-white' 
                           : 'text-gray-600 hover:bg-gray-100'
@@ -554,7 +554,7 @@ export default function ModelComparisonPage() {
                           {visibleModels.map((model) => (
                             <th key={model.id} className="px-6 py-4 text-center text-sm font-semibold text-gray-700">
                               <div className="mb-1">{model.name}</div>
-                              <div className="text-xs font-normal text-gray-500">{model.algorithm}</div>
+                              <div className="text-sm font-normal text-gray-500">{model.algorithm}</div>
                             </th>
                           ))}
                         </tr>

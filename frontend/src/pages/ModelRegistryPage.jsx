@@ -311,7 +311,7 @@ export default function ModelRegistryPage() {
           <div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-muted">{models.length} model{models.length !== 1 ? 's' : ''} · {promotedCount} promoted</p>
+                <p className="text-sm text-gray-muted">{models.length} model{models.length !== 1 ? 's' : ''} · {promotedCount} promoted</p>
               </div>
               <div className="flex items-center gap-3">
                 {/* Compare Selected — appears when ≥2 models ticked */}
@@ -325,7 +325,7 @@ export default function ModelRegistryPage() {
                   </button>
                 )}
                 {syncSuccess !== null && (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-dim text-green text-xs font-medium">
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-dim text-green text-sm font-medium">
                     <CheckCircle className="w-3.5 h-3.5" />
                     {syncSuccess}
                   </span>
@@ -440,7 +440,7 @@ export default function ModelRegistryPage() {
                     <h2 className="font-syne text-base font-bold text-purple-primary">
                       Ensemble Models (Meta-Learners)
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-purple-primary text-white text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-purple-primary text-white text-sm font-bold">
                       {ensembleModels.length}
                     </span>
                   </div>
@@ -473,7 +473,7 @@ export default function ModelRegistryPage() {
                     <h2 className="font-syne text-base font-bold text-black-text">
                       Base Learners
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 text-sm font-bold">
                       {baseLearners.length}
                     </span>
                   </div>
@@ -583,7 +583,7 @@ function StatCard({ icon: Icon, label, value, color }) {
           <Icon className={`w-5 h-5 ${c.text}`} />
         </div>
         <div>
-          <div className="text-xs text-gray-muted">{label}</div>
+          <div className="text-sm text-gray-muted">{label}</div>
           <div className="font-syne text-xl font-bold text-black-text">{value}</div>
         </div>
       </div>
@@ -656,28 +656,28 @@ function ModelCard({ model, onViewMetrics, isEnsemble, trainingJob, onClickTrain
           <div className="flex items-center gap-2">
             <span className="font-syne text-sm font-bold text-black-text truncate">{model.name}</span>
             {isTraining ? (
-              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-dim text-amber flex items-center gap-1 flex-shrink-0">
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-dim text-amber flex items-center gap-1 flex-shrink-0">
                 <Loader2 className="w-2.5 h-2.5 animate-spin" />
                 {trainingJob.status === 'queued' ? 'Queued' : 'Training'}
               </span>
             ) : (
-              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${status.bg} ${status.color} flex-shrink-0`}>
+              <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${status.bg} ${status.color} flex-shrink-0`}>
                 {status.label}
               </span>
             )}
           </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">{model.algorithm}</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">{model.algorithm}</div>
         </div>
 
         {/* Summary metrics */}
-        <div className="flex items-center gap-4 flex-shrink-0 text-xs mr-2">
+        <div className="flex items-center gap-4 flex-shrink-0 text-sm mr-2">
           <div className="text-right">
-            <div className="text-[10px] text-gray-400">AUC</div>
+            <div className="text-[11px] text-gray-400">AUC</div>
             <div className="font-bold text-purple-primary">{model.oof_auc ? (model.oof_auc * 100).toFixed(1) + '%' : model.accuracy + '%'}</div>
           </div>
           {model.createdAt && (
             <div className="text-right hidden sm:block">
-              <div className="text-[10px] text-gray-400">Date</div>
+              <div className="text-[11px] text-gray-400">Date</div>
               <div className="text-gray-600">{formatDate(model.createdAt)}</div>
             </div>
           )}
@@ -706,23 +706,23 @@ function ModelCard({ model, onViewMetrics, isEnsemble, trainingJob, onClickTrain
               { label: 'F1 Score',  value: model.f1Score !== 'N/A' ? model.f1Score + '%' : null },
             ].filter(m => m.value != null).map(({ label, value }) => (
               <div key={label} className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-                <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
+                <div className="text-[11px] text-gray-400 mb-0.5">{label}</div>
                 <div className="text-sm font-bold text-black-text">{value}</div>
               </div>
             ))}
           </div>
-          <div className="flex items-center justify-between text-xs text-gray-400">
+          <div className="flex items-center justify-between text-sm text-gray-400">
             <span>{model.samples || '—'} samples · {model.features || '—'} features</span>
             <button
               onClick={() => onViewMetrics(model.id)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-primary text-white text-xs hover:bg-purple-primary/90 transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-primary text-white text-sm hover:bg-purple-primary/90 transition-colors"
             >
               <Eye className="w-3 h-3" />
               Full Metrics
             </button>
           </div>
           {isEnsemble && model.baseModelIds?.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-1.5 text-xs text-purple-primary">
+            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-1.5 text-sm text-purple-primary">
               <GitBranch className="w-3 h-3" />
               Uses {model.baseModelIds.length} base learners
             </div>
@@ -809,7 +809,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
               <div>
                 <h3 className="font-semibold text-sm text-black-text mb-3">Confusion Matrix</h3>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <pre className="text-xs font-mono">{JSON.stringify(metrics.confusion_matrix, null, 2)}</pre>
+                  <pre className="text-sm font-mono">{JSON.stringify(metrics.confusion_matrix, null, 2)}</pre>
                 </div>
               </div>
             )}
@@ -825,7 +825,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
                     </button>
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
-                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
+                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-sm rounded shadow-lg" sideOffset={5}>
                       Download model artifacts
                       <Tooltip.Arrow className="fill-gray-900" />
                     </Tooltip.Content>
@@ -840,7 +840,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
                     </button>
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
-                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
+                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-sm rounded shadow-lg" sideOffset={5}>
                       Deploy to production
                       <Tooltip.Arrow className="fill-gray-900" />
                     </Tooltip.Content>
@@ -858,7 +858,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
 function MetricBox({ label, value }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-3">
-      <div className="text-xs text-gray-muted mb-1">{label}</div>
+      <div className="text-sm text-gray-muted mb-1">{label}</div>
       <div className="font-syne text-2xl font-bold text-purple-primary">{value}</div>
     </div>
   );
@@ -948,7 +948,7 @@ function EnsembleBuilderModal({
               disabled={isTraining}
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:border-purple-primary focus:ring-2 focus:ring-purple-primary/20 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            <p className="text-xs text-gray-muted mt-1.5">
+            <p className="text-sm text-gray-muted mt-1.5">
               Use the same dataset ID that was used to train the base models
             </p>
           </div>
@@ -965,7 +965,7 @@ function EnsembleBuilderModal({
               <button
                 onClick={toggleSelectAll}
                 disabled={isTraining || baseLearners.length === 0}
-                className="text-xs text-purple-primary hover:text-purple-primary/80 font-medium disabled:opacity-50"
+                className="text-sm text-purple-primary hover:text-purple-primary/80 font-medium disabled:opacity-50"
               >
                 {allSelected ? 'Deselect All' : 'Select All'}
               </button>
@@ -976,7 +976,7 @@ function EnsembleBuilderModal({
                 <div className="p-8 text-center">
                   <Brain className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-gray-muted">No base learners available</p>
-                  <p className="text-xs text-gray-muted mt-1">Train some base models first</p>
+                  <p className="text-sm text-gray-muted mt-1">Train some base models first</p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
@@ -1001,11 +1001,11 @@ function EnsembleBuilderModal({
                             <span className="font-medium text-sm text-black-text truncate">
                               {model.name}
                             </span>
-                            <span className="text-xs text-gray-muted">
+                            <span className="text-sm text-gray-muted">
                               ({model.algorithm})
                             </span>
                           </div>
-                          <div className="flex items-center gap-4 text-xs text-gray-muted">
+                          <div className="flex items-center gap-4 text-sm text-gray-muted">
                             <span>Accuracy: <span className="font-medium text-purple-primary">{model.accuracy}%</span></span>
                             <span>F1: {model.f1Score}%</span>
                             <span>{model.samples} samples</span>
@@ -1028,7 +1028,7 @@ function EnsembleBuilderModal({
                   <span className="font-medium">{selectedModels.length} models selected</span>
                 </div>
                 {selectedModels.length < 2 && (
-                  <span className="text-amber-600 text-xs">• Need at least 2 models</span>
+                  <span className="text-amber-600 text-sm">• Need at least 2 models</span>
                 )}
               </div>
             )}
@@ -1071,7 +1071,7 @@ function EnsembleBuilderModal({
           </div>
 
           {/* Meta-learner Info */}
-          <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
+          <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
             <div className="font-semibold text-black-text mb-1">ℹ️ Default Configuration</div>
             <div className="space-y-0.5">
               <div>• Meta-learner: Logistic Regression (optimized for stacking)</div>

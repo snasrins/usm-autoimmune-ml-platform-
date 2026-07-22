@@ -578,7 +578,7 @@ export default function TrainingJobsPage() {
       <div className="flex-1 flex flex-col" style={{ background: '#FFFFFF' }}>
       <PageHeader title="Training Jobs" subtitle="Training" user={user} />
       <ModelingStepsNav />
-      <div className="h-screen flex flex-col" style={{ zoom: 0.75, background: '#FFFFFF' }}>
+      <div className="min-h-screen flex flex-col" style={{ zoom: 0.75, background: '#FFFFFF' }}>
 
         {/* Stats Bar */}
         {activeRun && (
@@ -593,7 +593,7 @@ export default function TrainingJobsPage() {
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="p-6">
           <div className="max-w-7xl mx-auto space-y-6">
             
             {/* Active Training Run */}
@@ -602,7 +602,7 @@ export default function TrainingJobsPage() {
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <h2 className="font-syne text-base font-bold text-black-text">{activeRun.name}</h2>
-                    <p className="text-xs text-gray-muted mt-1">
+                    <p className="text-sm text-gray-muted mt-1">
                       Started: {new Date(activeRun.startedAt).toLocaleString()}
                     </p>
                   </div>
@@ -613,14 +613,14 @@ export default function TrainingJobsPage() {
                         sessionStorage.removeItem('active_training_run');
                         setShowNewRunDialog(true);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-primary text-purple-primary hover:bg-purple-dim transition-colors text-xs font-medium"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-primary text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       New Run
                     </button>
                     <button
                       onClick={() => window.location.reload()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors text-xs text-gray-muted"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-muted"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                       Refresh
@@ -631,7 +631,7 @@ export default function TrainingJobsPage() {
                           // Scroll down to the inline EnsembleSection
                           document.querySelector('[data-ensemble-section]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-primary to-blue-500 text-white hover:opacity-90 transition-opacity text-xs font-medium"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-primary to-blue-500 text-white hover:opacity-90 transition-opacity text-sm font-medium"
                       >
                         <Layers className="w-3.5 h-3.5" />
                         Train Ensemble ({completedModels.length} models) ↓
@@ -640,7 +640,7 @@ export default function TrainingJobsPage() {
                     {completedModels.length >= 1 && (
                       <button
                         onClick={() => navigate('/model-comparison')}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 transition-colors text-xs font-medium"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-primary text-white hover:bg-purple-primary/90 transition-colors text-sm font-medium"
                       >
                         <BarChart3 className="w-3.5 h-3.5" />
                         Go to Model Comparison ({completedModels.length})
@@ -689,7 +689,7 @@ export default function TrainingJobsPage() {
                     </div>
                     <div>
                       <h3 className="font-syne text-sm font-bold text-black-text">No Active Training Run</h3>
-                      <p className="text-xs text-gray-muted mt-0.5">Select a dataset and models to start a new run</p>
+                      <p className="text-sm text-gray-muted mt-0.5">Select a dataset and models to start a new run</p>
                     </div>
                   </div>
                   <button
@@ -708,14 +708,14 @@ export default function TrainingJobsPage() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h2 className="font-syne text-base font-bold text-black-text">Training History</h2>
-                  <p className="text-xs text-gray-muted mt-1">
+                  <p className="text-sm text-gray-muted mt-1">
                     {loadingHistory ? 'Loading...' : `${trainingHistory.length} model run${trainingHistory.length !== 1 ? 's' : ''} completed`}
                   </p>
                 </div>
                 <button
                   onClick={refreshHistory}
                   disabled={loadingHistory}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors text-xs text-gray-muted disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-muted disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin' : ''}`} />
                   Refresh
@@ -728,7 +728,7 @@ export default function TrainingJobsPage() {
                   placeholder="Search runs by model name, dataset ID, or status…"
                   value={historySearch}
                   onChange={e => { setHistorySearch(e.target.value); setHistoryPage(1); }}
-                  className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-primary/30 focus:border-purple-primary"
+                  className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-primary/30 focus:border-purple-primary"
                 />
                 <Eye className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
               </div>
@@ -741,7 +741,7 @@ export default function TrainingJobsPage() {
                 <div className="text-center py-10">
                   <BarChart3 className="w-10 h-10 text-purple-primary/30 mx-auto mb-3" />
                   <p className="text-sm text-gray-muted">No training runs recorded yet</p>
-                  <p className="text-xs text-gray-muted mt-1">Results will appear here after your first run completes</p>
+                  <p className="text-sm text-gray-muted mt-1">Results will appear here after your first run completes</p>
                 </div>
               ) : (() => {
                 // ── Group jobs into sessions by dataset_id ──
@@ -788,7 +788,7 @@ export default function TrainingJobsPage() {
                 return (
                   <div className="space-y-3">
                     {sessions.length === 0 && historySearch && (
-                      <p className="text-center py-6 text-xs text-gray-400">No runs match "{historySearch}"</p>
+                      <p className="text-center py-6 text-sm text-gray-400">No runs match "{historySearch}"</p>
                     )}
                     {pagedSessions.map((session, si) => {
                       const isOpen = expandedSessions.has(session.key) || (si === 0 && expandedSessions.has('session-0'));
@@ -813,33 +813,33 @@ export default function TrainingJobsPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-syne text-sm font-bold text-black-text">{dateLabel}</span>
-                                {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-primary text-white">Today</span>}
-                                <span className="text-[10px] text-gray-400">{baseCount} base{ensembleCount ? `, ${ensembleCount} ensemble` : ''}</span>
+                                {isToday && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-purple-primary text-white">Today</span>}
+                                <span className="text-[11px] text-gray-400">{baseCount} base{ensembleCount ? `, ${ensembleCount} ensemble` : ''}</span>
                               </div>
-                              <div className="text-[10px] text-gray-400 mt-0.5 font-mono truncate">
+                              <div className="text-[11px] text-gray-400 mt-0.5 font-mono truncate">
                                 {session.datasetId ? `dataset: ${session.datasetId.slice(0, 8)}…` : 'no dataset ref'}
                               </div>
                               {/* Submitted by */}
                               {session.jobs[0]?.user_full_name && (
                                 <div className="flex items-center gap-1 mt-0.5">
                                   <Users className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                  <span className="text-[10px] text-gray-600 font-medium">{session.jobs[0].user_full_name}</span>
+                                  <span className="text-[11px] text-gray-600 font-medium">{session.jobs[0].user_full_name}</span>
                                   {session.jobs[0].user_full_name !== user?.full_name && (
-                                    <span className="text-[10px] text-gray-400">(Other Team Member)</span>
+                                    <span className="text-[11px] text-gray-400">(Other Team Member)</span>
                                   )}
                                 </div>
                               )}
                             </div>
                             {session.bestAuc > 0 && (
                               <div className="text-right flex-shrink-0 mr-2">
-                                <div className="text-[10px] text-gray-400">Best AUC</div>
+                                <div className="text-[11px] text-gray-400">Best AUC</div>
                                 <div className="font-bold text-sm text-purple-primary">{session.bestAuc.toFixed(3)}</div>
                               </div>
                             )}
                             {completedJobs.length >= 1 && (
                               <button
                                 onClick={e => { e.stopPropagation(); navigate('/models', { state: { highlightIds: modelJobIds } }); }}
-                                className="flex-shrink-0 flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg bg-purple-dim text-purple-primary hover:bg-purple-primary hover:text-white transition-colors mr-1"
+                                className="flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-purple-dim text-purple-primary hover:bg-purple-primary hover:text-white transition-colors mr-1"
                                 title="View these models in Registry"
                               >
                                 <Layers className="w-3 h-3" /> Registry →
@@ -874,7 +874,7 @@ export default function TrainingJobsPage() {
                                     isLoading={historyEnsembleLoading}
                                   />
                                 ) : historyEnsembleJobs[session.key] ? (
-                                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-xs text-blue-700 font-medium">
+                                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-sm text-blue-700 font-medium">
                                     <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
                                     Ensemble training in progress — history will refresh automatically
                                   </div>
@@ -885,7 +885,7 @@ export default function TrainingJobsPage() {
                                       // auto-expand the session
                                       setExpandedSessions(prev => new Set([...prev, session.key, 'session-0']));
                                     }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-purple-300 text-purple-primary hover:bg-purple-dim text-xs font-medium transition-colors"
+                                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-purple-300 text-purple-primary hover:bg-purple-dim text-sm font-medium transition-colors"
                                   >
                                     <Layers className="w-3.5 h-3.5" />
                                     Add Ensemble on these base models →
@@ -901,7 +901,7 @@ export default function TrainingJobsPage() {
                     {hasMore && (
                       <button
                         onClick={() => setHistoryPage(p => p + 1)}
-                        className="w-full py-2.5 rounded-xl border border-gray-200 text-xs text-gray-muted hover:bg-gray-50 transition-colors"
+                        className="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-muted hover:bg-gray-50 transition-colors"
                       >
                         Load older sessions ({sessions.length - pagedSessions.length} more)
                       </button>
@@ -973,25 +973,25 @@ function EnsembleSection({ completedModels, activeRun, onStart, isLoading }) {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="font-syne text-sm font-bold text-purple-primary">Train Stacking Ensemble</span>
-            <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-purple-dim text-purple-primary">
+            <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-purple-dim text-purple-primary">
               {completedModels.length} base models ready
             </span>
           </div>
-          <p className="text-[10px] text-gray-400 mt-0.5">Combine your trained models into a meta-learner</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Combine your trained models into a meta-learner</p>
         </div>
         <ChevronDown className={`w-4 h-4 text-purple-300 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
       </button>
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-purple-100 bg-purple-50/30">
-          <p className="text-xs text-gray-500 mt-3 mb-2">Select meta-learner algorithm:</p>
+          <p className="text-sm text-gray-500 mt-3 mb-2">Select meta-learner algorithm:</p>
           <div className="space-y-2 mb-4">
             {META_LEARNERS.map(ml => (
               <label key={ml.id} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${metaLearner === ml.id ? 'border-purple-primary bg-purple-dim' : 'border-gray-200 hover:border-purple-200'}`}>
                 <input type="radio" name="metaLearner" value={ml.id} checked={metaLearner === ml.id} onChange={() => setMetaLearner(ml.id)} className="mt-0.5 accent-purple-600" />
                 <div>
-                  <div className="text-xs font-semibold text-black-text">{ml.label}</div>
-                  <div className="text-[10px] text-gray-400">{ml.desc}</div>
+                  <div className="text-sm font-semibold text-black-text">{ml.label}</div>
+                  <div className="text-[11px] text-gray-400">{ml.desc}</div>
                 </div>
               </label>
             ))}
@@ -1028,20 +1028,20 @@ function HistoryEnsembleSection({ session, onStart, onCancel, isLoading }) {
     <div className="border-2 border-purple-200 rounded-xl overflow-hidden bg-purple-50/30">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-purple-100">
         <Layers className="w-4 h-4 text-purple-primary flex-shrink-0" />
-        <span className="font-syne text-xs font-bold text-purple-primary flex-1">
+        <span className="font-syne text-sm font-bold text-purple-primary flex-1">
           Stack {baseCount} base models into an ensemble
         </span>
-        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded transition-colors">Cancel</button>
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-sm px-2 py-1 rounded transition-colors">Cancel</button>
       </div>
       <div className="px-4 pb-4 pt-3">
-        <p className="text-[10px] text-gray-500 mb-2">Select meta-learner:</p>
+        <p className="text-[11px] text-gray-500 mb-2">Select meta-learner:</p>
         <div className="space-y-1.5 mb-3">
           {META_LEARNERS.map(ml => (
             <label key={ml.id} className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${metaLearner === ml.id ? 'border-purple-primary bg-white' : 'border-gray-200 hover:border-purple-200'}`}>
               <input type="radio" name={`histMeta-${session.key}`} value={ml.id} checked={metaLearner === ml.id} onChange={() => setMetaLearner(ml.id)} className="mt-0.5 accent-purple-600" />
               <div>
-                <div className="text-[11px] font-semibold text-black-text">{ml.label}</div>
-                <div className="text-[10px] text-gray-400">{ml.desc}</div>
+                <div className="text-[12px] font-semibold text-black-text">{ml.label}</div>
+                <div className="text-[11px] text-gray-400">{ml.desc}</div>
               </div>
             </label>
           ))}
@@ -1049,7 +1049,7 @@ function HistoryEnsembleSection({ session, onStart, onCancel, isLoading }) {
         <button
           onClick={() => onStart({ metaLearnerType: metaLearner })}
           disabled={isLoading}
-          className="w-full py-2 rounded-lg bg-purple-primary text-white text-xs font-medium hover:bg-purple-primary/90 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+          className="w-full py-2 rounded-lg bg-purple-primary text-white text-sm font-medium hover:bg-purple-primary/90 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
         >
           {isLoading ? (
             <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Starting…</>
@@ -1089,7 +1089,7 @@ function TrainingJobCard({ job, modelInfo, isExpanded, onToggle }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-syne text-sm font-bold text-black-text truncate">{displayName}</span>
-            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusConfig.bg} ${statusConfig.color} flex-shrink-0`}>
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusConfig.bg} ${statusConfig.color} flex-shrink-0`}>
               <StatusIcon className="w-2.5 h-2.5" />
               {statusConfig.label}
             </span>
@@ -1099,34 +1099,34 @@ function TrainingJobCard({ job, modelInfo, isExpanded, onToggle }) {
               <div className="h-1 flex-1 bg-gray-200 rounded-full overflow-hidden">
                 <div className="h-full bg-amber rounded-full transition-all" style={{ width: `${job.progress || 15}%` }} />
               </div>
-              <span className="text-[10px] text-amber font-medium">{job.progress || 0}%</span>
+              <span className="text-[11px] text-amber font-medium">{job.progress || 0}%</span>
             </div>
           )}
         </div>
 
         {job.status === 'completed' && job.result && (
-          <div className="flex items-center gap-4 text-xs flex-shrink-0 mr-2">
+          <div className="flex items-center gap-4 text-sm flex-shrink-0 mr-2">
             <div className="text-right">
-              <div className="text-[10px] text-gray-400">AUC</div>
+              <div className="text-[11px] text-gray-400">AUC</div>
               <div className="font-bold text-purple-primary">
                 {(job.result.test_auc ?? job.result.ensemble_test_auc ?? job.result.oof_auc)?.toFixed(3) || '—'}
               </div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] text-gray-400">F1</div>
+              <div className="text-[11px] text-gray-400">F1</div>
               <div className="font-bold text-green">
                 {(job.result.test_f1 ?? job.result.ensemble_test_f1 ?? job.result.f1)?.toFixed(3) || '—'}
               </div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] text-gray-400">Time</div>
+              <div className="text-[11px] text-gray-400">Time</div>
               <div className="font-bold text-black-text">
                 {job.result.training_time_seconds ? `${Math.round(job.result.training_time_seconds)}s` : '—'}
               </div>
             </div>
           </div>
         )}
-        {job.status === 'queued' && <span className="text-xs text-blue-400 flex-shrink-0 mr-2">Waiting...</span>}
+        {job.status === 'queued' && <span className="text-sm text-blue-400 flex-shrink-0 mr-2">Waiting...</span>}
 
         <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
       </button>
@@ -1134,7 +1134,7 @@ function TrainingJobCard({ job, modelInfo, isExpanded, onToggle }) {
       {isExpanded && (
         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
           {job.status === 'queued' && (
-            <div className="flex items-center gap-2 text-xs text-blue-500 py-1">
+            <div className="flex items-center gap-2 text-sm text-blue-500 py-1">
               <Clock className="w-3.5 h-3.5" /> Waiting for resources to become available...
             </div>
           )}
@@ -1143,7 +1143,7 @@ function TrainingJobCard({ job, modelInfo, isExpanded, onToggle }) {
               <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div className="h-full bg-amber rounded-full transition-all" style={{ width: `${job.progress || 15}%` }} />
               </div>
-              <p className="text-xs text-gray-500">Training in progress — {job.progress || 0}% complete</p>
+              <p className="text-sm text-gray-500">Training in progress — {job.progress || 0}% complete</p>
             </div>
           )}
           {job.status === 'completed' && job.result && (
@@ -1157,14 +1157,14 @@ function TrainingJobCard({ job, modelInfo, isExpanded, onToggle }) {
                 { label: 'Training Time',  value: job.result.training_time_seconds ? `${Math.round(job.result.training_time_seconds)}s` : null, color: 'text-black-text' },
               ].filter(m => m.value != null).map(({ label, value, color }) => (
                 <div key={label} className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-                  <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
+                  <div className="text-[11px] text-gray-400 mb-0.5">{label}</div>
                   <div className={`text-sm font-bold ${color}`}>{value}</div>
                 </div>
               ))}
             </div>
           )}
           {job.status === 'failed' && (
-            <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+            <div className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
               Error: {job.error_message || 'Training failed'}
             </div>
           )}
@@ -1216,7 +1216,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
           <div>
             <h2 className="font-syne text-lg font-bold text-black-text">New Training Run</h2>
-            <p className="text-xs text-gray-muted mt-0.5">Select a dataset and the algorithms to run</p>
+            <p className="text-sm text-gray-muted mt-0.5">Select a dataset and the algorithms to run</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X className="w-5 h-5 text-gray-muted" />
@@ -1229,11 +1229,11 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
             <div key={s.num} className="flex items-center">
               <button
                 onClick={() => { if (s.num < step || (s.num === 2 && canNext1)) setStep(s.num); }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium transition-all ${
                   step === s.num ? 'bg-purple-dim text-purple-primary' : s.num < step ? 'text-purple-primary hover:bg-purple-dim/50 cursor-pointer' : 'text-gray-400 cursor-default'
                 }`}
               >
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
                   s.num < step ? 'bg-green-100 text-green-700' : step === s.num ? 'bg-purple-primary text-white' : 'bg-gray-100 text-gray-400'
                 }`}>
                   {s.num < step ? '✓' : s.num}
@@ -1244,7 +1244,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
             </div>
           ))}
           {selectedModels.length > 0 && (
-            <span className="ml-auto text-xs text-purple-primary font-medium">{selectedModels.length} model{selectedModels.length !== 1 ? 's' : ''} selected</span>
+            <span className="ml-auto text-sm text-purple-primary font-medium">{selectedModels.length} model{selectedModels.length !== 1 ? 's' : ''} selected</span>
           )}
         </div>
 
@@ -1254,7 +1254,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
           {/* ─── STEP 1: Dataset ─── */}
           {step === 1 && (
             <div className="space-y-3">
-              <p className="text-xs text-gray-muted">Select the dataset to train on. Newest first — defaults to the latest upload.</p>
+              <p className="text-sm text-gray-muted">Select the dataset to train on. Newest first — defaults to the latest upload.</p>
 
               {/* Search */}
               <div className="relative">
@@ -1263,7 +1263,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
                   placeholder="Search datasets…"
                   value={datasetSearch}
                   onChange={e => setDatasetSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-purple-primary/50"
+                  className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-purple-primary/50"
                 />
                 <svg className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z" /></svg>
               </div>
@@ -1272,7 +1272,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
                 <div className="text-center py-10">
                   <Database className="w-10 h-10 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-muted">No datasets available</p>
-                  <p className="text-xs text-gray-muted mt-1">Upload and label a dataset in Data Preparation first</p>
+                  <p className="text-sm text-gray-muted mt-1">Upload and label a dataset in Data Preparation first</p>
                 </div>
               ) : (() => {
                 const filtered = availableDatasets.filter(d =>
@@ -1301,10 +1301,10 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
                               <div className="flex items-center gap-2">
                                 <span className="font-syne font-bold text-sm text-black-text truncate">{getCleanName(dataset)}</span>
                                 {dataset.isToday && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 flex-shrink-0">New</span>
+                                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 flex-shrink-0">New</span>
                                 )}
                               </div>
-                              <div className="text-xs text-gray-muted mt-0.5">{dataset.record_count.toLocaleString()} records · {new Date(dataset.uploaded_at).toLocaleDateString()}</div>
+                              <div className="text-sm text-gray-muted mt-0.5">{dataset.record_count.toLocaleString()} records · {new Date(dataset.uploaded_at).toLocaleDateString()}</div>
                             </div>
                             {isSel && <CheckCircle className="w-5 h-5 text-purple-primary flex-shrink-0" />}
                           </div>
@@ -1312,7 +1312,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
                       );
                     })}
                     {hiddenCount > 0 && (
-                      <button onClick={() => setShowAllDatasets(true)} className="w-full py-2 text-xs text-purple-primary hover:underline text-center">
+                      <button onClick={() => setShowAllDatasets(true)} className="w-full py-2 text-sm text-purple-primary hover:underline text-center">
                         Show {hiddenCount} older dataset{hiddenCount !== 1 ? 's' : ''} →
                       </button>
                     )}
@@ -1327,27 +1327,27 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
             <div className="space-y-4">
               {/* Dataset summary */}
               {selectedDataset && (
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl text-xs">
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl text-sm">
                   <Database className="w-3.5 h-3.5 text-purple-primary flex-shrink-0" />
                   <span className="font-medium text-black-text truncate">{getCleanName(selectedDataset)}</span>
                   <span className="text-gray-400 flex-shrink-0">{selectedDataset.record_count} records</span>
-                  <button onClick={() => setStep(1)} className="text-purple-primary hover:underline ml-auto flex-shrink-0 text-xs">Change</button>
+                  <button onClick={() => setStep(1)} className="text-purple-primary hover:underline ml-auto flex-shrink-0 text-sm">Change</button>
                 </div>
               )}
 
               {/* Preset shortcuts */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 mr-1">Quick select:</span>
+                <span className="text-sm text-gray-400 mr-1">Quick select:</span>
                 <button onClick={() => onSetModels(['logistic_regression','decision_tree','random_forest','xgboost','lightgbm'])}
-                  className="text-xs px-2.5 py-1 rounded-full border border-gray-200 hover:border-purple-primary/40 hover:bg-purple-dim transition-colors text-gray-600 hover:text-purple-primary">
+                  className="text-sm px-2.5 py-1 rounded-full border border-gray-200 hover:border-purple-primary/40 hover:bg-purple-dim transition-colors text-gray-600 hover:text-purple-primary">
                   5 core models
                 </button>
                 <button onClick={() => onSetModels(AVAILABLE_MODELS.map(m => m.id))}
-                  className="text-xs px-2.5 py-1 rounded-full border border-gray-200 hover:border-purple-primary/40 hover:bg-purple-dim transition-colors text-gray-600 hover:text-purple-primary">
+                  className="text-sm px-2.5 py-1 rounded-full border border-gray-200 hover:border-purple-primary/40 hover:bg-purple-dim transition-colors text-gray-600 hover:text-purple-primary">
                   All 13
                 </button>
                 <button onClick={() => onSetModels([])}
-                  className="text-xs px-2.5 py-1 rounded-full border border-gray-200 hover:border-gray-300 transition-colors text-gray-400 hover:text-gray-600">
+                  className="text-sm px-2.5 py-1 rounded-full border border-gray-200 hover:border-gray-300 transition-colors text-gray-400 hover:text-gray-600">
                   Clear
                 </button>
               </div>
@@ -1355,7 +1355,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
               {/* Model grid */}
               {Object.entries(modelsByCategory).map(([category, models]) => (
                 <div key={category}>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">{category}</div>
+                  <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">{category}</div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {models.map(model => {
                       const Icon = model.icon;
@@ -1364,7 +1364,7 @@ function NewTrainingRunDialog({ availableDatasets, selectedModels, onToggleModel
                         <button
                           key={model.id}
                           onClick={() => onToggleModel(model.id)}
-                          className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left text-xs transition-all ${
+                          className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left text-sm transition-all ${
                             isSel ? 'border-purple-primary bg-purple-dim' : 'border-gray-100 hover:border-purple-primary/30 hover:bg-gray-50'
                           }`}
                         >
@@ -1443,7 +1443,7 @@ function StatCard({ icon: Icon, label, value, color }) {
           <Icon className={`w-5 h-5 ${c.text}`} />
         </div>
         <div>
-          <div className="text-xs text-gray-muted">{label}</div>
+          <div className="text-sm text-gray-muted">{label}</div>
           <div className="font-syne text-xl font-bold text-black-text">{value}</div>
         </div>
       </div>
@@ -1480,7 +1480,7 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="font-syne text-xl font-bold text-black-text">Model Performance Comparison</h2>
-            <p className="text-xs text-gray-muted mt-1">LAYER 7: ML Training + LAYER 8: Evaluation Metrics</p>
+            <p className="text-sm text-gray-muted mt-1">LAYER 7: ML Training + LAYER 8: Evaluation Metrics</p>
           </div>
           <button
             onClick={onClose}
@@ -1492,7 +1492,7 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
         
         {/* Model Selector */}
         <div className="mb-6 p-4 bg-purple-50 rounded-lg">
-          <div className="text-xs font-bold text-gray-muted mb-2">Select Models to Compare (up to 4)</div>
+          <div className="text-sm font-bold text-gray-muted mb-2">Select Models to Compare (up to 4)</div>
           <div className="flex flex-wrap gap-2">
             {models.map(model => {
               const isSelected = selectedModels.includes(model.modelId);
@@ -1511,7 +1511,7 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
                   } ${!isSelected && selectedModels.length >= 4 ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <Icon className={`w-4 h-4 ${isSelected ? 'text-purple-primary' : 'text-gray-muted'}`} />
-                  <span className="text-xs font-medium text-black-text">{model.modelName}</span>
+                  <span className="text-sm font-medium text-black-text">{model.modelName}</span>
                 </button>
               );
             })}
@@ -1531,7 +1531,7 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
             <div className="mb-6">
               <h3 className="font-syne text-sm font-bold text-black-text mb-3">Performance Metrics (Side-by-Side)</h3>
               <div className="bg-gray-50 rounded-lg overflow-hidden">
-                <table className="w-full text-xs">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
                       <th className="px-4 py-3 text-left font-bold text-gray-700 bg-white">Metric</th>
@@ -1556,7 +1556,7 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
                             return (
                               <td key={model.modelId} className={`px-4 py-3 text-center font-bold ${isBest ? `${metric.color} bg-green-50` : 'text-gray-700'}`}>
                                 {metric.format(value)}
-                                {isBest && <span className="ml-1 text-green text-[10px]">★ BEST</span>}
+                                {isBest && <span className="ml-1 text-green text-[11px]">★ BEST</span>}
                               </td>
                             );
                           })}
@@ -1584,10 +1584,10 @@ function ModelComparisonDialog({ models, selectedModels, onToggleModel, onClose 
             <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg p-6 text-center">
               <Activity className="w-12 h-12 text-purple-primary/40 mx-auto mb-3" />
               <h3 className="font-syne text-sm font-bold text-gray-900 mb-2">Visual Comparison Chart</h3>
-              <p className="text-xs text-gray-600">
+              <p className="text-sm text-gray-600">
                 Radar chart visualization showing {comparisonData.length} models across {metrics.length} metrics
               </p>
-              <div className="mt-4 text-[10px] text-gray-500">
+              <div className="mt-4 text-[11px] text-gray-500">
                 📊 Chart implementation: Use Chart.js or Recharts for visualization
               </div>
             </div>
@@ -1632,23 +1632,23 @@ function HistoryJobCard({ job, isExpanded, onToggle }) {
             <span className="font-syne text-sm font-bold text-black-text truncate">
               {modelInfo?.name || job.model_name || 'Unknown Model'}
             </span>
-            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusConfig.bg} ${statusConfig.color} flex-shrink-0`}>
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusConfig.bg} ${statusConfig.color} flex-shrink-0`}>
               <StatusIcon className="w-2.5 h-2.5" />
               {statusConfig.label}
             </span>
           </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(job.created_at)}</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">{formatDate(job.created_at)}</div>
         </div>
-        <div className="flex items-center gap-4 flex-shrink-0 text-xs mr-2">
+        <div className="flex items-center gap-4 flex-shrink-0 text-sm mr-2">
           {job.oof_auc != null && (
             <div className="text-right">
-              <div className="text-[10px] text-gray-400">CV AUC</div>
+              <div className="text-[11px] text-gray-400">CV AUC</div>
               <div className="font-bold text-purple-primary">{job.oof_auc.toFixed(3)}</div>
             </div>
           )}
           {formatDuration(job.training_time_seconds) && (
             <div className="text-right">
-              <div className="text-[10px] text-gray-400">Duration</div>
+              <div className="text-[11px] text-gray-400">Duration</div>
               <div className="font-bold text-black-text">{formatDuration(job.training_time_seconds)}</div>
             </div>
           )}
@@ -1658,26 +1658,26 @@ function HistoryJobCard({ job, isExpanded, onToggle }) {
 
       {isExpanded && (
         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
             <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-              <div className="text-[10px] text-gray-400 mb-0.5">Job ID</div>
-              <div className="font-mono text-gray-500 text-[10px]">{job.job_id?.slice(0, 8)}…</div>
+              <div className="text-[11px] text-gray-400 mb-0.5">Job ID</div>
+              <div className="font-mono text-gray-500 text-[11px]">{job.job_id?.slice(0, 8)}…</div>
             </div>
             <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-              <div className="text-[10px] text-gray-400 mb-0.5">Completed</div>
+              <div className="text-[11px] text-gray-400 mb-0.5">Completed</div>
               <div className="text-gray-700">{formatDate(job.completed_at)}</div>
             </div>
             <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-              <div className="text-[10px] text-gray-400 mb-0.5">CV AUC (OOF)</div>
+              <div className="text-[11px] text-gray-400 mb-0.5">CV AUC (OOF)</div>
               <div className="font-bold text-purple-primary">{job.oof_auc?.toFixed(4) || '—'}</div>
             </div>
             <div className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-              <div className="text-[10px] text-gray-400 mb-0.5">Duration</div>
+              <div className="text-[11px] text-gray-400 mb-0.5">Duration</div>
               <div className="font-bold text-black-text">{formatDuration(job.training_time_seconds) || '—'}</div>
             </div>
             {job.user_full_name && (
               <div className="bg-white rounded-lg px-3 py-2 border border-gray-100 col-span-2">
-                <div className="text-[10px] text-gray-400 mb-0.5">Trained by</div>
+                <div className="text-[11px] text-gray-400 mb-0.5">Trained by</div>
                 <div className="text-gray-700">{job.user_full_name}</div>
               </div>
             )}
@@ -1697,38 +1697,38 @@ function ConfusionMatrixCard({ model }) {
     <div className="bg-white border border-gray-200 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
         <div className="font-syne text-sm font-bold text-gray-900">{model.modelName}</div>
-        <div className="ml-auto text-xs text-gray-500">Total: {total}</div>
+        <div className="ml-auto text-sm text-gray-500">Total: {total}</div>
       </div>
       
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-green-100 border border-green-200 rounded p-3 text-center">
-          <div className="text-xs text-gray-600 mb-1">True Negative</div>
+          <div className="text-sm text-gray-600 mb-1">True Negative</div>
           <div className="font-bold text-lg text-green-700">{cm[0]?.[0] || 0}</div>
-          <div className="text-[10px] text-gray-500 mt-1">
+          <div className="text-[11px] text-gray-500 mt-1">
             {total > 0 ? `${((cm[0]?.[0] || 0) / total * 100).toFixed(1)}%` : '0%'}
           </div>
         </div>
         
         <div className="bg-red-100 border border-red-200 rounded p-3 text-center">
-          <div className="text-xs text-gray-600 mb-1">False Positive</div>
+          <div className="text-sm text-gray-600 mb-1">False Positive</div>
           <div className="font-bold text-lg text-red-700">{cm[0]?.[1] || 0}</div>
-          <div className="text-[10px] text-gray-500 mt-1">
+          <div className="text-[11px] text-gray-500 mt-1">
             {total > 0 ? `${((cm[0]?.[1] || 0) / total * 100).toFixed(1)}%` : '0%'}
           </div>
         </div>
         
         <div className="bg-red-100 border border-red-200 rounded p-3 text-center">
-          <div className="text-xs text-gray-600 mb-1">False Negative</div>
+          <div className="text-sm text-gray-600 mb-1">False Negative</div>
           <div className="font-bold text-lg text-red-700">{cm[1]?.[0] || 0}</div>
-          <div className="text-[10px] text-gray-500 mt-1">
+          <div className="text-[11px] text-gray-500 mt-1">
             {total > 0 ? `${((cm[1]?.[0] || 0) / total * 100).toFixed(1)}%` : '0%'}
           </div>
         </div>
         
         <div className="bg-green-100 border border-green-200 rounded p-3 text-center">
-          <div className="text-xs text-gray-600 mb-1">True Positive</div>
+          <div className="text-sm text-gray-600 mb-1">True Positive</div>
           <div className="font-bold text-lg text-green-700">{cm[1]?.[1] || 0}</div>
-          <div className="text-[10px] text-gray-500 mt-1">
+          <div className="text-[11px] text-gray-500 mt-1">
             {total > 0 ? `${((cm[1]?.[1] || 0) / total * 100).toFixed(1)}%` : '0%'}
           </div>
         </div>
