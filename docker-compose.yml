@@ -61,6 +61,13 @@ services:
       - "${TAILSCALE_IP}:8001:8000"
     networks:
       - usm-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     depends_on:
       postgres:
         condition: service_healthy
