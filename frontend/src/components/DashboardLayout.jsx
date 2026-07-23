@@ -184,18 +184,18 @@ export default function DashboardLayout({ children }) {
             )}
           </div>
           
-          <span className={`font-syne font-extrabold text-[15px] text-white tracking-wide transition-opacity duration-200 whitespace-nowrap flex items-center gap-1.5 ${
-            sidebarExpanded ? 'opacity-100' : 'opacity-0'
-          }`}>
-            MyAria-i
-            <Copyright className="w-3 h-3" />
-          </span>
-          
+          {sidebarExpanded && (
+            <span className="font-syne font-extrabold text-[15px] text-white tracking-wide whitespace-nowrap flex items-center gap-1.5">
+              MyAria-i
+              <Copyright className="w-3 h-3" />
+            </span>
+          )}
+
           {/* Close button when expanded */}
           {sidebarExpanded && (
             <button
               onClick={() => setSidebarExpanded(false)}
-              className="ml-auto p-1.5 rounded-md hover:bg-white/[0.08] text-white/[0.42] hover:text-white/[0.78] transition-all cursor-pointer"
+              className="p-1.5 rounded-md hover:bg-white/[0.08] text-white/[0.42] hover:text-white/[0.78] transition-all cursor-pointer"
               title="Close sidebar"
             >
               <PanelLeftClose className="w-3.5 h-3.5" />
@@ -338,25 +338,25 @@ export default function DashboardLayout({ children }) {
               />
             </button>
             
-            <button
-              onClick={() => navigate('/profile')}
-              className={`overflow-hidden flex-1 text-left cursor-pointer transition-opacity duration-150 ${
-                sidebarExpanded ? 'opacity-100' : 'opacity-0'
-              }`}
-            >
-              <div className="text-[11px] font-semibold text-white whitespace-nowrap truncate">{user?.full_name || 'User'}</div>
-              <div className="text-[9px] text-white/[0.42] whitespace-nowrap capitalize">{user?.role || 'AI Engineer'}</div>
-            </button>
-            
-            <button
-              onClick={handleLogout}
-              className={`ml-auto p-1.5 rounded-lg hover:bg-white/[0.08] text-white/[0.42] hover:text-white cursor-pointer transition-all duration-150 ${
-                sidebarExpanded ? 'opacity-100' : 'opacity-0'
-              }`}
-              title="Logout"
-            >
-              <LogOut className="w-3.5 h-3.5" strokeWidth={1.5} />
-            </button>
+            {sidebarExpanded && (
+              <button
+                onClick={() => navigate('/profile')}
+                className="overflow-hidden flex-1 text-left cursor-pointer"
+              >
+                <div className="text-[11px] font-semibold text-white whitespace-nowrap truncate">{user?.full_name || 'User'}</div>
+                <div className="text-[9px] text-white/[0.42] whitespace-nowrap capitalize">{user?.role || 'AI Engineer'}</div>
+              </button>
+            )}
+
+            {sidebarExpanded && (
+              <button
+                onClick={handleLogout}
+                className="ml-auto p-1.5 rounded-lg hover:bg-white/[0.08] text-white/[0.42] hover:text-white cursor-pointer transition-all duration-150"
+                title="Logout"
+              >
+                <LogOut className="w-3.5 h-3.5" strokeWidth={1.5} />
+              </button>
+            )}
           </div>
         </div>
       </aside>

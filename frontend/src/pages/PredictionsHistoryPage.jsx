@@ -70,7 +70,7 @@ export default function PredictionsHistoryPage() {
 
   return (
     <DashboardLayout>
-      <div className="h-screen flex flex-col" style={{ zoom: 0.75 }}>
+      <div className="min-h-screen flex flex-col" style={{ zoom: 0.75 }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-white/60 backdrop-blur-sm border-b border-white/20">
           <div>
@@ -131,7 +131,7 @@ export default function PredictionsHistoryPage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="p-6">
           <div className="max-w-7xl mx-auto">
             {loading ? (
               <div className="text-center py-12">
