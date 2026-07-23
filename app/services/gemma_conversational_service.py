@@ -38,7 +38,15 @@ def _load_gemma_background():
             _gemma_loading_in_progress = False
             return
         try:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # TEMPORARY: forced to CPU regardless of GPU availability. The GPU path
+            # (4-bit quantized, device_map split between language_model on GPU and
+            # vision/audio towers on CPU) produces garbled/hallucinated output -
+            # tried both float16 and bfloat16 compute dtypes, same failure both times.
+            # Root cause is still under investigation (suspect the hand-written
+            # device_map is missing a module, e.g. a separate text embed_tokens layer,
+            # leaving part of the model uninitialized). Do not re-enable cuda here
+            # until that's confirmed fixed and verified correct in a live chat test.
+            device = torch.device("cpu")
             model_id = "google/gemma-4-E4B"
             logger.info(f"[Gemma] Starting background load of {model_id} on {device}...")
             tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -411,7 +419,9 @@ class GemmaConversationalService:
     
     def __init__(self, db: Session):
         self.db = db
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Must match the device _load_gemma_background() actually loads the model onto
+        # (currently forced to CPU - see the TEMPORARY note there).
+        self.device = torch.device("cpu")
         # Point instance properties at the module-level singleton
         logger.debug(f"Gemma service instantiated (device: {self.device}, loaded: {_gemma_model_loaded})")
 
