@@ -50,9 +50,12 @@ def _load_gemma_background():
                 # onto the CPU when VRAM is tight. Instead: pin just the text-generation path
                 # to GPU (4-bit quantized to fit in limited free VRAM) and leave the unused
                 # vision/audio towers on CPU, since they're never touched by text-only chat.
+                # Compute dtype MUST be bfloat16, matching this checkpoint's native dtype
+                # (see config.json) - float16's narrower dynamic range overflows to NaN/Inf
+                # on this model's activations, producing garbled/repetitive output.
                 bnb_config = BitsAndBytesConfig(
                     load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_use_double_quant=True,
                     llm_int8_enable_fp32_cpu_offload=True,
