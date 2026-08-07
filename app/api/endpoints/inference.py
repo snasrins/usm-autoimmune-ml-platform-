@@ -4,12 +4,16 @@ FastAPI routes for making predictions with trained models
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel
 import logging
+import uuid as uuid_lib
 
 from app.core.database import get_db
 from app.api.deps import get_current_active_user, require_researcher_or_admin
 from app.models.user import User
+from app.models.training_job import TrainingJob
+from app.models.flexible_data import FlexibleDatasetWide
 from app.schemas.training import (
     PredictionRequest, PredictionResponse,
     BatchPredictionRequest, BatchPredictionResponse,
@@ -17,6 +21,13 @@ from app.schemas.training import (
 )
 from app.services.ml_inference_service import MLInferenceService
 from app.services.minio_service import get_minio_service
+
+
+class PredictByDatasetRequest(BaseModel):
+    """Batch predict using a previously uploaded dataset identified by batch_id."""
+    job_id: str
+    dataset_batch_id: str
+    max_records: Optional[int] = None  # None = all records
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -377,6 +388,69 @@ async def list_prediction_history(
         )
 
 
+@router.get("/predictions/confidence-stats")
+async def get_prediction_confidence_stats(
+    max_batches: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Aggregate confidence tier counts from recent batch prediction CSVs stored in MinIO.
+    Returns: { high, medium, low, total, batches_analyzed }
+    """
+    try:
+        from app.services.minio_service import get_minio_service
+        import pandas as pd
+        import io
+
+        minio = get_minio_service()
+        bucket_name = "predictions"
+
+        if not minio.client.bucket_exists(bucket_name):
+            return {"high": 0, "medium": 0, "low": 0, "total": 0, "batches_analyzed": 0}
+
+        # List all CSV objects, sort most-recent-first
+        objects = list(minio.client.list_objects(bucket_name, recursive=True))
+        csv_objects = [o for o in objects if o.object_name.endswith('.csv')]
+        csv_objects.sort(key=lambda x: x.last_modified, reverse=True)
+        csv_objects = csv_objects[:max_batches]
+
+        high_count = 0
+        medium_count = 0
+        low_count = 0
+        batches_analyzed = 0
+
+        for obj in csv_objects:
+            try:
+                data = minio.client.get_object(bucket_name, obj.object_name)
+                content = data.read()
+                df = pd.read_csv(io.BytesIO(content))
+
+                if 'confidence' not in df.columns:
+                    continue
+
+                conf = pd.to_numeric(df['confidence'], errors='coerce').dropna()
+                high_count   += int((conf >= 0.75).sum())
+                medium_count += int(((conf >= 0.50) & (conf < 0.75)).sum())
+                low_count    += int((conf < 0.50).sum())
+                batches_analyzed += 1
+            except Exception:
+                continue
+
+        total = high_count + medium_count + low_count
+        return {
+            "high": high_count,
+            "medium": medium_count,
+            "low": low_count,
+            "total": total,
+            "batches_analyzed": batches_analyzed,
+        }
+
+    except Exception as e:
+        logger.error(f"Error computing confidence stats: {e}")
+        return {"high": 0, "medium": 0, "low": 0, "total": 0, "batches_analyzed": 0}
+
+
 @router.get("/predictions/{batch_id}/download")
 async def download_prediction_results(
     batch_id: str,
@@ -415,5 +489,170 @@ async def download_prediction_results(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Prediction file not found: {str(e)}"
+        )
+
+
+@router.post("/predict/by-dataset", response_model=BatchPredictionResponse)
+async def predict_by_dataset(
+    request: PredictByDatasetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_researcher_or_admin)
+):
+    """
+    Run batch prediction against an existing uploaded dataset.
+
+    Looks up the model from the training job record, fetches all records for
+    the given dataset_batch_id from FlexibleDatasetWide, and runs batch inference.
+
+    Example request:
+    ```json
+    {
+        "job_id": "abc123",
+        "dataset_batch_id": "550e8400-e29b-41d4-a716-446655440000",
+        "max_records": 500
+    }
+    ```
+    """
+    try:
+        # 1. Resolve model artifact path from training job
+        job = db.query(TrainingJob).filter(TrainingJob.job_id == request.job_id).first()
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Training job not found: {request.job_id}"
+            )
+
+        artifact_paths = job.artifact_paths or []
+        if not artifact_paths:
+            result_data = job.result or {}
+            single_path = result_data.get("model_artifact_path", "")
+            if single_path:
+                artifact_paths = [single_path]
+
+        if not artifact_paths:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No model artifacts found for job {request.job_id}."
+            )
+
+        first_path = artifact_paths[0]
+        parts = first_path.split("/")
+        if len(parts) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected artifact path format: {first_path}"
+            )
+        minio_model_name = parts[0]
+        minio_version = parts[1]
+
+        # 2. Load dataset records from FlexibleDatasetWide
+        try:
+            batch_uuid = uuid_lib.UUID(request.dataset_batch_id)
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid dataset_batch_id format: {request.dataset_batch_id}"
+            )
+
+        query = db.query(FlexibleDatasetWide).filter(
+            FlexibleDatasetWide.import_batch_id == batch_uuid
+        )
+        if request.max_records:
+            query = query.limit(request.max_records)
+        records = query.all()
+
+        if not records:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No data found for dataset batch {request.dataset_batch_id}. Please upload data first."
+            )
+
+        logger.info(f"predict/by-dataset: job={request.job_id}, batch={request.dataset_batch_id}, records={len(records)}")
+
+        # 3. Flatten each record's JSONB data into a flat dict
+        def _flatten(data: dict, parent_key: str = '', sep: str = '_') -> dict:
+            items = []
+            for k, v in data.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.extend(_flatten(v, new_key, sep=sep).items())
+                elif isinstance(v, list):
+                    items.append((new_key, str(v)))
+                else:
+                    items.append((new_key, v))
+            return dict(items)
+
+        patients_data = []
+        for rec in records:
+            raw = rec.data or {}
+            if isinstance(raw, str):
+                import json
+                try:
+                    raw = json.loads(raw)
+                except Exception:
+                    raw = {}
+            flat = _flatten(raw)
+            flat['record_id'] = rec.record_id
+            patients_data.append(flat)
+
+        # 4. Run batch inference
+        inference_service = MLInferenceService(db)
+        results = inference_service.predict_batch(
+            model_name=minio_model_name,
+            version=minio_version,
+            patient_data_list=patients_data
+        )
+
+        predictions = [PredictionResponse(**r) for r in results]
+
+        # 5. Save results to MinIO
+        try:
+            import pandas as pd
+            from datetime import datetime
+
+            predictions_data = []
+            for i, pred in enumerate(predictions):
+                pred_dict = pred.dict()
+                pred_dict['patient_index'] = i
+                pred_dict['record_id'] = patients_data[i].get('record_id', i)
+                predictions_data.append(pred_dict)
+
+            df = pd.DataFrame(predictions_data)
+            csv_bytes = df.to_csv(index=False).encode('utf-8')
+
+            minio_service = get_minio_service()
+            batch_id = str(uuid_lib.uuid4())
+            minio_path = minio_service.save_prediction_results(
+                predictions_csv=csv_bytes,
+                batch_id=batch_id,
+                model_name=minio_model_name,
+                metadata={
+                    'model_version': minio_version,
+                    'total_predictions': len(predictions),
+                    'predicted_at': datetime.now().isoformat(),
+                    'predicted_by': current_user.username,
+                    'dataset_batch_id': request.dataset_batch_id
+                }
+            )
+            logger.info(f"✓ By-dataset predictions saved to MinIO: {minio_path}")
+        except Exception as minio_err:
+            logger.warning(f"⚠️ Failed to save predictions to MinIO: {minio_err}")
+            minio_path = None
+
+        return BatchPredictionResponse(
+            predictions=predictions,
+            total_processed=len(patients_data),
+            success_count=len(predictions),
+            failure_count=len(patients_data) - len(predictions),
+            minio_path=minio_path
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"predict/by-dataset error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch prediction failed: {str(e)}"
         )
 

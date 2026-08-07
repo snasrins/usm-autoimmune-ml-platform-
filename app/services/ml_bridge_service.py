@@ -376,13 +376,20 @@ class MLBridgeService:
                 df[col] = df[col].replace([np.inf, -np.inf], np.nan)
         
         # Remove constant columns (except target)
+        # Also drop columns with unhashable values (lists/dicts) — unusable as ML features
         constant_cols = []
         for col in df.columns:
-            if col != target_column and df[col].nunique() == 1:
+            if col == target_column:
+                continue
+            try:
+                if df[col].nunique() == 1:
+                    constant_cols.append(col)
+            except TypeError:
+                # Column contains unhashable types (lists/dicts) — not usable as a feature
                 constant_cols.append(col)
         
         if constant_cols:
-            logger.info(f"Removing {len(constant_cols)} constant columns")
+            logger.info(f"Removing {len(constant_cols)} constant/unhashable columns")
             df = df.drop(columns=constant_cols)
         
         return df
@@ -404,17 +411,24 @@ class MLBridgeService:
             if df[col].dtype in [np.int64, np.float64]:
                 continue
             
-            # Try to convert to numeric
-            try:
-                # First try direct conversion
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            except:
-                # If failed, check if it's boolean-like
-                if df[col].dtype == 'object':
-                    unique_vals = df[col].dropna().unique()
-                    if len(unique_vals) <= 10:  # Likely categorical
-                        # Keep as is (will be one-hot encoded later)
-                        pass
+            # Only convert if most values are actually numeric
+            # pd.to_numeric(errors='coerce') NEVER raises — check first to avoid
+            # silently nuking string columns like labels_disease_classification
+            if df[col].dtype == object:
+                non_null = df[col].dropna()
+                if len(non_null) == 0:
+                    continue
+                # Drop columns that contain non-scalar values (lists/dicts)
+                # — they cannot be used as ML features and cause TypeError in nunique()
+                first_val = non_null.iloc[0]
+                if isinstance(first_val, (list, dict)):
+                    continue  # will be removed by the constant/unhashable check in _clean_for_ml
+                converted = pd.to_numeric(non_null, errors='coerce')
+                success_rate = converted.notna().sum() / len(non_null)
+                # Only apply numeric conversion if ≥70% of values parse as numbers
+                if success_rate >= 0.70:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                # else: leave as string/categorical (e.g. label columns, disease names)
         
         return df
     

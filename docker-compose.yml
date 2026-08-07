@@ -61,11 +61,6 @@ services:
       - "${TAILSCALE_IP}:8001:8000"
     networks:
       - usm-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -73,6 +68,11 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     working_dir: /
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 

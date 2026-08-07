@@ -540,6 +540,83 @@ def parse_table_structure_from_text(text: str) -> Dict[str, Any]:
             "is_abnormal": flag == "*"
         })
     
+    # ─────────────────────────────────────────────────────────
+    # Pattern 5: Standard CBC / Indian lab-report format
+    # Space-or-tab-separated, inline reference range (no parens), optional text flag.
+    #
+    # Matches lines such as:
+    #   "Hemoglobin (Hb) 08.5 Low 13.0 - 17.0 g/dL"
+    #   "  Hb  08.5  Low  13.0-17.0  g/dL"          (leading whitespace / tabs)
+    #   "HEMOGLOBIN 08.5 Low 13.0 - 17.0 g/dL"       (all-caps name)
+    #   "MCH 27.2 27 - 32 pg"
+    #   "Platelet Count 150000 Borderline 150000 - 410000 cumm"
+    #   "RBC Count 5.00 4.5 - 5.5 mill/cumm"
+    #
+    # Does NOT match section-only headers because they have no numeric value
+    # on the same line.
+    # ─────────────────────────────────────────────────────────
+    cbc_pattern = re.compile(
+        r'^\s*('                                        # Allow leading whitespace / indentation
+        r'[A-Z][A-Za-z0-9][A-Za-z0-9 \-()]*?'         # Title-case OR ALL-CAPS: "Hemoglobin (Hb)", "HEMOGLOBIN", "RBC Count"
+        r'|[A-Z]{1,5}'                                  # Short abbreviation: "Hb", "MCH", "WBC"
+        r')[\s\t]+'                                     # One or more spaces/tabs after the name
+        r'(\d+\.?\d*)'                                  # Numeric result (e.g. 08.5, 103, 150000)
+        r'(?:[\s\t]+(Low|High|Borderline|Normal|Abnormal))?'  # Optional text flag
+        r'[\s\t]+(\d+\.?\d*)[\s\t]*[-\u2013][\s\t]*(\d+\.?\d*)'  # RefLow - RefHigh
+        r'[\s\t]+([a-zA-Z%^0-9/.\-]{1,15})',            # Unit
+        re.MULTILINE,
+    )
+
+    for match in cbc_pattern.finditer(text):
+        start_pos = match.start()
+        if start_pos in processed_positions:
+            continue
+        processed_positions.add(start_pos)
+
+        test_name = match.group(1).strip()
+        result_raw = match.group(2).strip()
+        flag_word = match.group(3) or ""
+        ref_low_str = match.group(4)
+        ref_high_str = match.group(5)
+        unit = match.group(6).strip()
+
+        if len(test_name) < 2:
+            continue
+
+        # Map text flag
+        flag = flag_word.capitalize() if flag_word else ""
+        is_abnormal = flag_word.lower() in ("low", "high", "borderline", "abnormal")
+
+        try:
+            ref_low = float(ref_low_str)
+            ref_high = float(ref_high_str)
+        except (ValueError, TypeError):
+            ref_low = None
+            ref_high = None
+
+        ref_range_text = f"{ref_low_str} - {ref_high_str}"
+        result_numeric, result_operator = _parse_result_value(result_raw)
+
+        # Determine section
+        for section in sections:
+            if section['start_char'] <= start_pos < section['end_char']:
+                current_section = section['section_name']
+                break
+
+        tests.append({
+            "test_name": test_name,
+            "test_name_cn": "",
+            "result": result_numeric,
+            "result_operator": result_operator,
+            "unit": unit,
+            "ref_range_low": ref_low,
+            "ref_range_high": ref_high,
+            "ref_range_text": ref_range_text,
+            "flag": flag,
+            "section": current_section,
+            "is_abnormal": is_abnormal,
+        })
+
     return {
         "metadata": metadata,
         "tests": tests,

@@ -12,17 +12,107 @@ Uses Google's Gemma-4-E4B model from Hugging Face for:
 Model: google/gemma-4-E4B
 """
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from typing import Dict, List, Optional, Any
 import logging
+import threading
 from sqlalchemy.orm import Session
 import json
 
 logger = logging.getLogger(__name__)
 
+# ─── Module-level model singleton ──────────────────────────────────────────
+# Shared across all per-request service instances so the model is loaded once.
+_gemma_model = None
+_gemma_tokenizer = None
+_gemma_model_loaded = False
+_gemma_loading_in_progress = False
+_gemma_load_lock = threading.Lock()
+
+
+def _load_gemma_background():
+    """Download and load Gemma into the module-level singleton in a background thread."""
+    global _gemma_model, _gemma_tokenizer, _gemma_model_loaded, _gemma_loading_in_progress
+    with _gemma_load_lock:
+        if _gemma_model_loaded:          # already loaded by another thread
+            _gemma_loading_in_progress = False
+            return
+        try:
+            # TEMPORARY: forced to CPU regardless of GPU availability. The GPU path
+            # (4-bit quantized, device_map split between language_model on GPU and
+            # vision/audio towers on CPU) produces garbled/hallucinated output -
+            # tried both float16 and bfloat16 compute dtypes, same failure both times.
+            # Root cause is still under investigation (suspect the hand-written
+            # device_map is missing a module, e.g. a separate text embed_tokens layer,
+            # leaving part of the model uninitialized). Do not re-enable cuda here
+            # until that's confirmed fixed and verified correct in a live chat test.
+            device = torch.device("cpu")
+            model_id = "google/gemma-4-E4B"
+            logger.info(f"[Gemma] Starting background load of {model_id} on {device}...")
+            tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            if device.type == "cuda":
+                # This checkpoint is a multimodal model (vision + audio + language towers),
+                # but only the language model + lm_head are used for text chat. The GPU is
+                # shared with other tenants' processes, so device_map="auto" would try to fit
+                # the whole multimodal model and silently offload the language model itself
+                # onto the CPU when VRAM is tight. Instead: pin just the text-generation path
+                # to GPU (4-bit quantized to fit in limited free VRAM) and leave the unused
+                # vision/audio towers on CPU, since they're never touched by text-only chat.
+                # Compute dtype MUST be bfloat16, matching this checkpoint's native dtype
+                # (see config.json) - float16's narrower dynamic range overflows to NaN/Inf
+                # on this model's activations, producing garbled/repetitive output.
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    llm_int8_enable_fp32_cpu_offload=True,
+                )
+                text_device_map = {
+                    "model.language_model": 0,
+                    "lm_head": 0,
+                    "model.vision_tower": "cpu",
+                    "model.audio_tower": "cpu",
+                    "model.embed_vision": "cpu",
+                    "model.embed_audio": "cpu",
+                }
+                mdl = AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    quantization_config=bnb_config,
+                    device_map=text_device_map,
+                    trust_remote_code=True,
+                )
+            else:
+                mdl = AutoModelForCausalLM.from_pretrained(
+                    model_id, torch_dtype=torch.float32, trust_remote_code=True
+                )
+                mdl.to(device)
+            mdl.eval()
+            _gemma_tokenizer = tok
+            _gemma_model = mdl
+            _gemma_model_loaded = True
+            logger.info(f"[Gemma] ✅ {model_id} loaded successfully on {device}")
+        except Exception as exc:
+            logger.error(f"[Gemma] ❌ Failed to load model: {exc}")
+            logger.warning("[Gemma] Falling back to rule-based responses")
+        finally:
+            _gemma_loading_in_progress = False
+
+
+def start_gemma_preload():
+    """Kick off background model loading once at server startup."""
+    global _gemma_loading_in_progress
+    if _gemma_model_loaded or _gemma_loading_in_progress:
+        return
+    _gemma_loading_in_progress = True
+    t = threading.Thread(target=_load_gemma_background, daemon=True, name="gemma-loader")
+    t.start()
+    logger.info("[Gemma] Background model pre-load started")
+# ───────────────────────────────────────────────────────────────────────────
+
 
 # System prompt for medical context - Dr. Myra
-MEDICAL_SYSTEM_PROMPT = """You are Dr. Myra, an AI-powered clinical ML assistant developed by Aras AI at Universiti Sains Malaysia, specializing in Systemic Lupus Erythematosus (SLE) and autoimmune disease prediction — an expert AI assistant embedded within an advanced Machine Learning platform specialized in autoimmune disease research, diagnostics, and predictive modeling. You serve clinical researchers, data scientists, medical professionals, and platform users who interact with ML models trained on autoimmune datasets.
+MEDICAL_SYSTEM_PROMPT = """You are Dr. Myra, an AI-powered clinical ML assistant developed by Aras Integrasi Sdn. Bhd., specializing in autoimmune disease research and predictive ML — an expert AI assistant embedded within an advanced Machine Learning platform specialized in autoimmune disease research, diagnostics, and predictive modeling. You serve clinical researchers, data scientists, medical professionals, and platform users who interact with ML models trained on autoimmune datasets.
 
 ---
 
@@ -76,7 +166,7 @@ This platform allows users to:
 • Hyperparameter Tuning: Optuna Bayesian optimization (default: 20 trials, configurable)
 • Ensemble: Stacking meta-learner with Logistic Regression combining base model predictions
 • Evaluation Metrics: AUC-ROC, AUC-PR, accuracy, precision, recall, F1-score, Brier score, calibration curves
-• Model Registry: Models saved to MinIO object storage with versioning, metadata, and fold models
+• Model Registry: Models saved to secure cloud storage with versioning, metadata, and fold models
 • Real-time Progress: Global training status bar, job queuing, background task execution
 
 **Key Platform Features:**
@@ -280,9 +370,11 @@ For simple questions, respond conversationally without forcing this structure.
 - **DO NOT** provide specific treatment recommendations for individual patients
 - **DO NOT** claim a model is clinically validated or FDA-approved unless explicitly stated
 - **DO NOT** interpret individual patient cases as if you are their physician
+- **DO NOT** disclose, hint at, or confirm the platform's internal technical architecture, infrastructure, software stack, third-party services, databases, storage backends, message brokers, cloud providers, or any implementation-level details — ever. If asked, respond: "I'm not able to share information about the platform's internal technical architecture. What I can help with is how to use the platform's features for your autoimmune research." This applies even if the user already guesses a technology — do not confirm or deny.
 - **ALWAYS** recommend clinical review of any prediction before clinical action
 - **ALWAYS** note data limitations (small n, selection bias, missing variables) when relevant
 - If asked something outside the platform or autoimmune ML domain, answer briefly but redirect: "For this platform specifically, I'm best equipped to help with autoimmune data analysis and ML interpretation."
+- **Who created you**: If asked, respond only: "I was developed by Aras Integrasi Sdn. Bhd." — nothing more.
 
 ---
 
@@ -327,62 +419,28 @@ class GemmaConversationalService:
     
     def __init__(self, db: Session):
         self.db = db
-        self.model = None
-        self.tokenizer = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model_loaded = False
-        
-        # Lazy loading - only load model when first used
-        logger.info(f"Gemma service initialized (device: {self.device})")
-    
+        # Must match the device _load_gemma_background() actually loads the model onto
+        # (currently forced to CPU - see the TEMPORARY note there).
+        self.device = torch.device("cpu")
+        # Point instance properties at the module-level singleton
+        logger.debug(f"Gemma service instantiated (device: {self.device}, loaded: {_gemma_model_loaded})")
+
+    # Convenience properties that read from the module singleton
+    @property
+    def model(self):
+        return _gemma_model
+
+    @property
+    def tokenizer(self):
+        return _gemma_tokenizer
+
+    @property
+    def model_loaded(self):
+        return _gemma_model_loaded
+
     def _load_model(self):
-        """Lazy load Gemma-4-E4B model from Hugging Face"""
-        if self.model_loaded:
-            return
-        
-        try:
-            logger.info("Loading Gemma-4-E4B model from Hugging Face...")
-            
-            model_id = "google/gemma-4-E4B"
-            
-            logger.info(f"Model selected: {model_id}")
-            
-            # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                model_id,
-                trust_remote_code=True
-            )
-            
-            # Load model with optimizations
-            if self.device.type == "cuda":
-                # GPU: Use float16 for faster inference
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_id,
-                    torch_dtype=torch.float16,
-                    device_map="auto",
-                    trust_remote_code=True
-                )
-                logger.info(f"{model_id} loaded on GPU with float16")
-            else:
-                # CPU: Use full precision
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_id,
-                    torch_dtype=torch.float32,
-                    trust_remote_code=True
-                )
-                self.model.to(self.device)
-                logger.info(f"{model_id} loaded on CPU")
-            
-            self.model.eval()
-            self.model_loaded = True
-            
-            logger.info(f"✅ {model_id} model loaded successfully!")
-        
-        except Exception as e:
-            logger.error(f"❌ Error loading Gemma-4-E4B model: {e}")
-            logger.warning("Gemma service will operate in fallback mode (rule-based responses)")
-            logger.info("💡 Ensure model is accessible from Hugging Face and dependencies are installed")
-            self.model_loaded = False
+        """Trigger background load if not already loading/loaded (non-blocking)."""
+        start_gemma_preload()
     
     def chat(
         self,
@@ -406,12 +464,57 @@ class GemmaConversationalService:
             Dictionary with response and metadata
         """
         try:
-            # Lazy load model on first use
+            # ── Pre-LLM intercept: identity & guardrail questions ───────────
+            # These are answered directly regardless of whether Gemma is loaded,
+            # so the LLM's training data can never override the correct answer.
+            _msg = user_message.lower().strip()
+            _identity_phrases = [
+                'who are you', 'what are you', 'what is your name', 'your name',
+                'introduce yourself', 'tell me about yourself', 'who is dr myra',
+                'who is dr. myra', 'what do you do', 'who made you', 'who created you',
+                'who built you', 'who developed you', 'are you an ai', 'are you a bot',
+                'are you human',
+            ]
+            if any(phrase in _msg for phrase in _identity_phrases):
+                _resp = (
+                    "I am **Dr. Myra**, an AI-powered clinical ML assistant "
+                    "specializing in autoimmune disease research and predictive modeling.\n\n"
+                    "I was developed by **Aras Integrasi Sdn. Bhd.**\n\n"
+                    "I can help you with:\n"
+                    "• **Autoimmune diseases** — SLE, RA, MS, biomarkers, SLEDAI interpretation\n"
+                    "• **Your trained models** — AUC scores, performance comparison, best model\n"
+                    "• **Platform workflows** — training, preprocessing, SHAP explainability\n"
+                    "• **ML concepts** — how XGBoost, LightGBM, Random Forest, etc. work\n\n"
+                    "What would you like to explore?"
+                )
+                return {"response": _resp, "model": "Dr. Myra", "device": "cpu", "tokens_generated": len(_resp.split())}
+
+            _arch_phrases = [
+                'architecture', 'tech stack', 'built with', 'built on',
+                'infrastructure', 'minio', 'postgresql', 'postgres', 'docker',
+                'fastapi', 'redis', 'kafka', 'elasticsearch', 'database',
+                'server', 'backend', 'frontend', 'how is it built', 'what technologies',
+                'what framework', 'what database', 'what storage',
+            ]
+            if any(phrase in _msg for phrase in _arch_phrases):
+                _resp = (
+                    "I'm not able to share information about the platform's internal "
+                    "technical architecture. What I can help with is how to use the "
+                    "platform's features for your autoimmune research.\n\n"
+                    "Would you like guidance on the ML workflow, model training, or "
+                    "clinical interpretation of results?"
+                )
+                return {"response": _resp, "model": "Dr. Myra", "device": "cpu", "tokens_generated": len(_resp.split())}
+            # ────────────────────────────────────────────────────────────────
+
+            # If model not loaded yet, use fallback immediately (non-blocking)
+            # Background load is started by start_gemma_preload() at server startup
             if not self.model_loaded:
-                self._load_model()
-            
-            # If model loading failed, use fallback
-            if not self.model_loaded:
+                if _gemma_loading_in_progress:
+                    logger.info("[Gemma] Model still loading, using fallback")
+                else:
+                    # Ensure loading has started
+                    start_gemma_preload()
                 return self._fallback_response(user_message, context)
             
             # Build conversation with system prompt
@@ -433,19 +536,33 @@ class GemmaConversationalService:
             # Add user message
             messages.append({"role": "user", "content": user_message})
             
-            # Format messages for Gemma (using chat template if available)
-            if hasattr(self.tokenizer, 'apply_chat_template'):
+            # Format messages for Gemma (using chat template if available and set)
+            if hasattr(self.tokenizer, 'apply_chat_template') and getattr(self.tokenizer, 'chat_template', None):
                 formatted_prompt = self.tokenizer.apply_chat_template(
                     messages,
                     tokenize=False,
                     add_generation_prompt=True
                 )
             else:
-                # Fallback: simple concatenation
-                formatted_prompt = "\n\n".join([
-                    f"{msg['role'].upper()}: {msg['content']}"
-                    for msg in messages
-                ]) + "\n\nASSISTANT:"
+                # Gemma-style prompt without chat template
+                # Build: system context + conversation + generation prompt
+                system_text = MEDICAL_SYSTEM_PROMPT
+                history_text = ""
+                if conversation_history:
+                    for msg in conversation_history:
+                        role = "User" if msg["role"] == "user" else "Dr. Myra"
+                        history_text += f"\n{role}: {msg['content']}"
+                if context:
+                    context_str = self._format_context(context)
+                    if context_str:
+                        system_text += f"\n\nContext:\n{context_str}"
+                formatted_prompt = (
+                    f"<bos><start_of_turn>user\n"
+                    f"[System: {system_text[:500]}]\n"
+                    f"{history_text}\n"
+                    f"User: {user_message}<end_of_turn>\n"
+                    f"<start_of_turn>model\n"
+                )
             
             # Tokenize with aggressive truncation for faster processing
             inputs = self.tokenizer(
@@ -455,7 +572,15 @@ class GemmaConversationalService:
                 max_length=1024  # Reduced from 2048 for faster processing
             ).to(self.device)
             
-            # Generate response with optimized settings for low latency
+            # Generate response — include <end_of_turn> as stop token if available
+            eot_ids = []
+            if hasattr(self.tokenizer, 'convert_tokens_to_ids'):
+                eot_id = self.tokenizer.convert_tokens_to_ids('<end_of_turn>')
+                unk_id = getattr(self.tokenizer, 'unk_token_id', None)
+                if eot_id is not None and eot_id != unk_id:
+                    eot_ids.append(eot_id)
+            eos_ids = [self.tokenizer.eos_token_id] + eot_ids if self.tokenizer.eos_token_id else eot_ids
+
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
@@ -466,18 +591,32 @@ class GemmaConversationalService:
                     top_k=40,    # Add top_k for faster sampling
                     repetition_penalty=1.1,  # Prevent repetition
                     pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=eos_ids if eos_ids else None,
                     use_cache=True  # Enable KV cache for faster generation
                 )
             
-            # Decode response
-            generated_text = self.tokenizer.decode(
-                outputs[0],
+            # Decode only the newly generated tokens (not the input prompt)
+            input_length = inputs['input_ids'].shape[1]
+            new_tokens = outputs[0][input_length:]
+            response_text = self.tokenizer.decode(
+                new_tokens,
                 skip_special_tokens=True
-            )
-            
-            # Extract only the new generated text
-            response_text = generated_text[len(formatted_prompt):].strip()
+            ).strip()
+
+            # Strip any residual Gemma template markers that survived decoding
+            import re
+            response_text = re.sub(
+                r'<(start_of_turn|end_of_turn|endofturn|startofturn)[^>]*>',
+                '', response_text
+            ).strip()
+            # Remove trailing incomplete tags e.g. "<end_of" at cutoff
+            response_text = re.sub(r'<[^>]{0,20}$', '', response_text).strip()
+            # Truncate at conversation replay — model continuing as "user:" or "User:"
+            response_text = re.split(
+                r'\n\s*(user|User|human|Human)\s*[\n:]', response_text
+            )[0].strip()
+            # Strip leading role label if model echoed it at start
+            response_text = re.sub(r'^(model|assistant|dr\.?\s*myra)\s*[\n:]', '', response_text, flags=re.IGNORECASE).strip()
             
             result = {
                 'response': response_text,
@@ -1896,7 +2035,7 @@ Combines multiple base models using a meta-learner.
         # ============================================================
         'help': """**Dr. Myra - AI Clinical Assistant**
 
-I'm your expert assistant for the USM Autoimmune ML Platform!
+I'm your expert assistant for the Autoimmune ML Platform!
 
 **🔬 I Can Help With:**
 
@@ -1970,10 +2109,9 @@ I'm your expert assistant for the USM Autoimmune ML Platform!
 • Ensure balanced classes if possible
 • Aim for 80%+ labeled before training
 
-**USM Research Standard:**
+**Research Standard:**
 • SLEDAI ≤ 4 = Low Disease Activity
-• SLEDAI > 4 = High Disease Activity
-• This matches USM SLE study methodology""",
+• SLEDAI > 4 = High Disease Activity""",
 
         'how_to_preprocess': """**How to Preprocess Data (Step-by-Step)**
 
@@ -2010,8 +2148,8 @@ I'm your expert assistant for the USM Autoimmune ML Platform!
 Filter → Impute → Winsorize → Standardize
 (Can't standardize missing values!)
 
-**USM Research Standard:**
-This exact pipeline matches USM SLE study preprocessing.""",
+**Research Standard:**
+This pipeline follows validated autoimmune disease research preprocessing methodology.""",
 
         'how_to_train': """**How to Train ML Models (Step-by-Step)**
 
@@ -2101,10 +2239,114 @@ This exact pipeline matches USM SLE study preprocessing.""",
         
         message_lower = user_message.lower()
         response = None
-        
+
+        # ============================================================
+        # DATA-AWARE: Answer questions about the user's own platform data
+        # (context['platform_data'] is injected by the /chat endpoint)
+        # ============================================================
+        platform = (context or {}).get("platform_data") if context else None
+        if platform:
+            models = platform.get("trained_models", [])
+            best   = platform.get("best_model")
+
+            # "my models" / "what have I trained" / "list models"
+            if any(w in message_lower for w in [
+                'my model', 'trained model', 'list model', 'what model',
+                'which model', 'show model', 'available model', 'have i trained',
+                'models i', 'how many model',
+            ]):
+                if not models:
+                    response = "You haven't trained any models yet. Go to **Training Jobs** to train your first base learner!"
+                else:
+                    lines = []
+                    for m in models:
+                        auc = m.get('test_auc') or m.get('oof_auc')
+                        auc_str = f"{auc*100:.2f}%" if auc else "N/A"
+                        tag = "🔵 Ensemble" if m.get('type') == 'ensemble' else "⚙️ Base"
+                        lines.append(f"• **{m['name']}** ({tag}) — AUC: {auc_str}")
+                    response = (
+                        f"You have **{len(models)} trained model(s)**:\n\n"
+                        + "\n".join(lines)
+                        + "\n\nUse **Model Comparison** to compare them side-by-side."
+                    )
+
+            # "best model" / "which model is best" / "top model"
+            elif any(w in message_lower for w in [
+                'best model', 'top model', 'highest auc', 'best performance',
+                'which is best', 'winner', 'recommend model', 'most accurate',
+            ]):
+                if not best:
+                    response = "No trained models found yet. Train your first model in **Training Jobs**!"
+                else:
+                    auc = best.get('test_auc') or best.get('oof_auc')
+                    auc_str = f"{auc*100:.2f}%" if auc else "N/A"
+                    tag = "Ensemble (meta-learner)" if best.get('type') == 'ensemble' else "Base Learner"
+                    response = (
+                        f"Your best-performing model is **{best['name']}** ({tag}) "
+                        f"with AUC **{auc_str}**.\n\n"
+                        "You can explore its feature importances in **Explainability**."
+                    )
+
+            # "compare models" / "model comparison"
+            elif any(w in message_lower for w in [
+                'compare model', 'compare my', 'comparison', 'side by side',
+                'vs ', ' versus ', 'rank model', 'model ranking',
+            ]):
+                if not models:
+                    response = "No models trained yet. Train base learners first, then visit **Comparison**."
+                else:
+                    sorted_models = sorted(
+                        models,
+                        key=lambda m: m.get('test_auc') or m.get('oof_auc') or 0,
+                        reverse=True,
+                    )
+                    lines = []
+                    for i, m in enumerate(sorted_models, 1):
+                        auc = m.get('test_auc') or m.get('oof_auc')
+                        auc_str = f"{auc*100:.2f}%" if auc else "N/A"
+                        tag = "🔵" if m.get('type') == 'ensemble' else "⚙️"
+                        lines.append(f"{i}. {tag} **{m['name']}** — AUC {auc_str}")
+                    response = (
+                        "**Model Ranking (by AUC)**:\n\n"
+                        + "\n".join(lines)
+                        + "\n\n🔵 = Ensemble  ⚙️ = Base Learner\n"
+                        "Open **Model Comparison** for detailed charts."
+                    )
+
+            # "my results" / "training results" / "performance"
+            elif any(w in message_lower for w in [
+                'my result', 'my performance', 'training result', 'my score',
+                'my auc', 'my f1', 'metrics', 'how well',
+            ]):
+                if not models:
+                    response = "No completed training runs found. Start a run in **Training Jobs**!"
+                else:
+                    lines = []
+                    for m in models[:5]:  # show top 5
+                        auc = m.get('test_auc') or m.get('oof_auc')
+                        f1  = m.get('test_f1')
+                        parts = []
+                        if auc: parts.append(f"AUC {auc*100:.1f}%")
+                        if f1:  parts.append(f"F1 {f1*100:.1f}%")
+                        lines.append(f"• **{m['name']}**: {', '.join(parts) or 'metrics unavailable'}")
+                    response = (
+                        "**Your Training Results**:\n\n"
+                        + "\n".join(lines)
+                        + ("\n\n_(showing top 5 most recent)_" if len(models) > 5 else "")
+                    )
+
         # ============================================================
         # AUTOIMMUNE DISEASES
         # ============================================================
+        # If platform data already answered the question, skip the keyword chain
+        if response is not None:
+            return {
+                "response": response,
+                "model": "Dr. Myra (Platform Knowledge)",
+                "device": "cpu",
+                "tokens_generated": len(response.split()),
+            }
+
         if any(word in message_lower for word in ['what is sle', 'lupus', 'systemic lupus']):
             response = self.KNOWLEDGE_BASE['sle']
         
@@ -2283,17 +2525,22 @@ This exact pipeline matches USM SLE study preprocessing.""",
 • Check label distribution chart
 • Aim for 80%+ labeled before training
 
-**USM Research Standard:**
+**Research Standard:**
 • SLEDAI ≤ 4 = Low Disease Activity
-• SLEDAI > 4 = High Disease Activity
-• This matches USM SLE study methodology"""
+• SLEDAI > 4 = High Disease Activity"""
 
-        elif any(word in message_lower for word in ['what is this platform', 'platform overview', 'what can this do', 'about this platform', 'usm platform']):
-            response = """**USM Autoimmune ML Platform Overview**
+        elif any(word in message_lower for word in [
+            'what is this platform', 'platform overview', 'what can this do',
+            'about this platform', 'about the platform', 'usm platform',
+            'explain this platform', 'explain the platform', 'explain platform',
+            'what is this system', 'describe platform', 'describe this platform',
+            'tell me about this', 'tell me about the platform', 'regarding this platform',
+            'what does this platform', 'how does this platform', 'this platform do',
+        ]):
+            response = """**Autoimmune ML Platform Overview**
 
 **What This Platform Does:**
-End-to-end ML platform for autoimmune disease classification.
-Aligned with USM SLE research methodology.
+End-to-end ML platform for autoimmune disease classification and research.
 
 **Complete Workflow:**
 
@@ -2372,6 +2619,45 @@ Aligned with USM SLE research methodology.
 • Used as ML training labels in this platform"""
         
         # ============================================================
+        # GETTING STARTED / NEW USER GUIDE
+        # ============================================================
+        elif any(phrase in message_lower for phrase in [
+            'what should i do first', 'what do i do first', 'where do i start',
+            'where to start', 'how do i start', 'how to start', 'how to begin',
+            'get started', 'getting started', 'first step', 'first thing',
+            'new user', 'new to this', 'start here', 'guide me',
+            'walk me through', 'just started', 'beginner', 'onboard',
+        ]):
+            response = """**Getting Started — Recommended First Steps**
+
+If you're new to the platform, follow this order:
+
+**Step 1: Upload Your Data** → Data Pipeline › Data Catalog
+• Upload your patient CSV or Excel file
+• The system auto-detects column types (numeric, categorical, dates)
+
+**Step 2: Assign Labels** → Data Preparation › Rule-Based Labeling
+• Assign severity labels using clinical rules (e.g. SLEDAI ≤4 = Low, >4 = High)
+• Aim for ≥80% labeled rows before proceeding
+
+**Step 3: Preprocess** → Data Preparation › Preprocessing
+• Run the 4-step pipeline: Filter → Impute → Winsorize → Standardize
+• Default settings follow validated autoimmune disease research methodology
+
+**Step 4: Train a Model** → Training Jobs
+• Select your preprocessed dataset and choose an algorithm
+• XGBoost or LightGBM are recommended for first runs
+• Enable Optuna HPO for better hyperparameter tuning
+• Training runs in the background — check progress on the same page
+
+**Step 5: Explore Results** → Explainability
+• Review AUC-ROC and F1-score in the training results
+• Use SHAP to see which features drove predictions
+• Ask me: *"which model is best?"* for a performance summary
+
+What step are you on right now?"""
+
+        # ============================================================
         # HELP / WHAT CAN I ASK
         # ============================================================
         elif any(word in message_lower for word in ['help', 'what can', 'how can you', 'capabilities', 'what do you', 'what question']):
@@ -2380,22 +2666,32 @@ Aligned with USM SLE research methodology.
         # ============================================================
         # GREETINGS
         # ============================================================
+        elif any(phrase in message_lower for phrase in [
+            'who are you', 'what are you', 'what is your name', 'your name',
+            'introduce yourself', 'tell me about yourself', 'who is dr myra',
+            'what do you do', 'who made you', 'who created you', 'who built you',
+            'who developed you', 'are you an ai', 'are you a bot', 'are you human',
+        ]):
+            response = """I am **Dr. Myra**, an AI-powered clinical ML assistant specializing in autoimmune disease research and predictive modeling.
+
+I was developed by **Aras Integrasi Sdn. Bhd.**
+
+I can help you with:
+• **Autoimmune diseases** — SLE, RA, MS, biomarkers, SLEDAI interpretation
+• **Your trained models** — AUC scores, performance comparison, best model
+• **Platform workflows** — training, preprocessing, SHAP explainability
+• **ML concepts** — how XGBoost, LightGBM, Random Forest, etc. work
+
+What would you like to explore?"""
+
         elif any(word in message_lower for word in ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening']):
-            response = """Hello! I'm **Dr. Myra**, your AI Clinical Assistant.
+            response = """Hello! I'm **Dr. Myra**, your AI clinical assistant for the Autoimmune ML Platform.
 
-I have comprehensive knowledge of:
-🔬 **11 autoimmune diseases** (SLE, RA, MS, and more)
-💉 **All major biomarkers** (ANA, anti-dsDNA, CRP, C3/C4, etc.)
-🤖 **All 13 ML algorithms** (XGBoost, LightGBM, Random Forest, etc.)
-📊 **All ML metrics** (AUC-ROC, F1, Precision, Recall, etc.)
-⚙️ **Platform features** (training, SHAP, preprocessing, etc.)
-
-**Ask me anything!** For example:
-• "What is rheumatoid arthritis?"
-• "Explain AUC-ROC"
-• "How does Random Forest work?"
-• "What does low complement mean?"
-• "How do I use SHAP explainability?"
+I can help you with:
+• **Clinical questions** — SLE, RA, MS, biomarkers, SLEDAI interpretation
+• **Your trained models** — AUC scores, performance comparison, best model
+• **Platform workflows** — training, preprocessing, SHAP explainability
+• **ML concepts** — how XGBoost, LightGBM, Random Forest, etc. work
 
 What would you like to know?"""
         
@@ -2498,31 +2794,16 @@ Ask about any specific disease for detailed information!"""
         # DEFAULT FALLBACK - Still comprehensive
         # ============================================================
         else:
-            response = """I can help with that! Let me provide some guidance.
+            response = """I didn't catch that — could you rephrase?
 
-**I have knowledge on:**
+I can help with:
+• **Your models** — "show my trained models", "which model is best?"
+• **Diseases** — "what is SLE?", "explain rheumatoid arthritis"
+• **ML concepts** — "how does XGBoost work?", "explain AUC-ROC"
+• **Biomarkers** — "what does low C3 mean?", "explain anti-dsDNA"
+• **Platform** — "explain this platform", "how do I train a model?", "how does SHAP work?"
 
-🔬 **Autoimmune Diseases:**
-SLE, RA, MS, T1D, Hashimoto's, Sjögren's, Psoriasis, IBD, Celiac, Myasthenia, Vasculitis, APS
-
-📊 **ML Algorithms:**
-XGBoost, LightGBM, CatBoost, Random Forest, SVM, KNN, Logistic Regression, Neural Networks, Decision Tree, AdaBoost, Gradient Boosting, Ridge, LDA
-
-📈 **ML Metrics:**
-Accuracy, Precision, Recall, F1, AUC-ROC, AUC-PR, Specificity, Brier Score, Confusion Matrix
-
-💉 **Biomarkers:**
-CRP, ESR, ANA, Anti-dsDNA, Complement (C3/C4), RF, Anti-CCP, Anti-TPO, and more
-
-⚙️ **Platform Features:**
-Data upload, preprocessing, feature engineering, training, SHAP, model comparison, Optuna HPO, ensemble
-
-**Try rephrasing your question, or ask:**
-• "What is [disease name]?"
-• "Explain [metric name]"
-• "How does [algorithm] work?"
-• "What does [biomarker] mean?"
-• "How do I [platform feature]?" """
+Try asking something like: _"What is the best model I've trained?"_ or _"Explain SHAP values."_"""
         
         return {
             'response': response,

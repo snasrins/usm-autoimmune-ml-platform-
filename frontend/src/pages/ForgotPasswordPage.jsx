@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import myAriaLogo from '../assets/myaria-logo.png';
 import { Mail, ArrowRight, ArrowLeft, Check, Copyright } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
@@ -51,7 +52,7 @@ export default function ForgotPasswordPage() {
                 {/* Logo */}
                 <div className="relative z-10 flex items-center gap-3 mb-12">
                   <div className="w-12 h-12 rounded-lg bg-white flex items-center justify-center p-1.5">
-                    <img src="/Logo/MyAria-I Logo.png" alt="MyAria-i Logo" className="w-full h-full object-contain" />
+                    <img src={myAriaLogo} alt="MyAria-i Logo" className="w-full h-full object-contain" />
                   </div>
                   <span className="font-syne text-2xl font-bold text-white flex items-center gap-2">
                     MyAria-i
@@ -156,7 +157,7 @@ export default function ForgotPasswordPage() {
               {/* Logo */}
               <div className="relative z-10 flex items-center gap-3 mb-12">
                 <div className="w-12 h-12 rounded-lg bg-white flex items-center justify-center p-1.5">
-                  <img src="/Logo/MyAria-I Logo.png" alt="MyAria-i Logo" className="w-full h-full object-contain" />
+                  <img src={myAriaLogo} alt="MyAria-i Logo" className="w-full h-full object-contain" />
                 </div>
                 <span className="font-syne text-2xl font-bold text-white flex items-center gap-2">
                   MyAria-i

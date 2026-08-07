@@ -20,9 +20,12 @@ import {
   GitBranch,
   X,
   HelpCircle,
-  Loader2
+  Loader2,
+  ChevronDown,
+  XCircle
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import ModelingStepsNav from '../components/ModelingStepsNav';
 import PageHeader from '../components/PageHeader';
 import { mlAPI, authAPI } from '../services/api';
 import { trainingAPI } from '../services/api-complete';
@@ -36,6 +39,7 @@ export default function ModelRegistryPage() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [expandedModels, setExpandedModels] = useState(new Set());
   const [selectedModel, setSelectedModel] = useState(null);
   const [modelMetrics, setModelMetrics] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -50,6 +54,14 @@ export default function ModelRegistryPage() {
   const [datasetId, setDatasetId] = useState('');
   const [ensembleTraining, setEnsembleTraining] = useState(false);
   const [ensembleError, setEnsembleError] = useState(null);
+
+  // Compare selection state
+  const [compareSelection, setCompareSelection] = useState(new Set());
+  const toggleCompare = (id) => setCompareSelection(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   // Fetch models from API and load user
   useEffect(() => {
@@ -137,13 +149,16 @@ export default function ModelRegistryPage() {
   // Find training job for a model by algorithm name
   const findTrainingJob = (modelAlgorithm) => {
     if (!activeTrainingRun) return null;
-    
-    // Match by algorithm name (e.g., "xgboost", "random_forest")
     const normalizedAlgorithm = modelAlgorithm.toLowerCase().replace(/\s+/g, '_');
     const job = activeTrainingRun.jobs[normalizedAlgorithm];
-    
     return job || null;
   };
+
+  const toggleModel = (modelId) => setExpandedModels(prev => {
+    const next = new Set(prev);
+    next.has(modelId) ? next.delete(modelId) : next.add(modelId);
+    return next;
+  });
 
   // Fetch detailed metrics for a specific model
   const fetchModelMetrics = async (modelId) => {
@@ -287,40 +302,80 @@ export default function ModelRegistryPage() {
 
   return (
     <DashboardLayout>
+      <div className="flex-1 flex flex-col" style={{ background: '#FFFFFF' }}>
       <PageHeader title="Model Registry" subtitle="Registry" user={user} />
-      <div className="flex-1 overflow-y-auto" style={{ background: '#FAFBFC', zoom: 0.78 }}>
-        <div className="max-w-7xl mx-auto p-6 space-y-6">
-          {/* Top Actions Bar */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={fetchModels}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh
-              </button>
-              <button
-                onClick={() => setShowEnsembleBuilder(true)}
-                disabled={baseLearners.length < 2}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-200 bg-white text-purple-700 hover:bg-purple-50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                title={baseLearners.length < 2 ? 'Need at least 2 base learners' : 'Build ensemble from base learners'}
-              >
-                <Sparkles className="w-4 h-4" />
-                Build Ensemble
-              </button>
+      <ModelingStepsNav />
+      <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF', zoom: 0.75 }}>
+        {/* Action Bar */}
+        <div className="px-6 py-4 bg-white/60 backdrop-blur-sm border-b border-white/40">
+          <div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-muted">{models.length} model{models.length !== 1 ? 's' : ''} · {promotedCount} promoted</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Compare Selected — appears when ≥2 models ticked */}
+                {compareSelection.size >= 2 && (
+                  <button
+                    onClick={() => navigate('/model-comparison', { state: { preselected: Array.from(compareSelection) } })}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    Compare {compareSelection.size} →
+                  </button>
+                )}
+                {syncSuccess !== null && (
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-dim text-green text-sm font-medium">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    {syncSuccess}
+                  </span>
+                )}
+                <button
+                  onClick={handleSyncFromMinIO}
+                  disabled={syncing}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Sync models from MinIO storage"
+                >
+                  {syncing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Sync from MinIO
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={fetchModels}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Refresh
+                </button>
+                <button
+                  onClick={() => setShowEnsembleBuilder(true)}
+                  disabled={baseLearners.length < 2}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-purple-primary/20 bg-white/80 text-purple-primary hover:bg-purple-dim transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={baseLearners.length < 2 ? 'Need at least 2 base learners' : 'Build ensemble from base learners'}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Build Ensemble
+                </button>
+                <button
+                  onClick={() => navigate('/training')}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all text-sm font-medium"
+                >
+                  <Zap className="w-4 h-4" />
+                  Train New Model
+                </button>
+              </div>
             </div>
-            <button
-              onClick={() => navigate('/training')}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
-            >
-              <Zap className="w-4 h-4" />
-              Train New Model
-            </button>
-          </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-4">
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-4">
               <StatCard 
                 icon={Layers} 
                 label="Total Models" 
@@ -344,43 +399,48 @@ export default function ModelRegistryPage() {
                 label="Avg Accuracy" 
                 value={`${avgAccuracy}%`} 
                 color="amber" 
-            />
+              />
+            </div>
           </div>
+        </div>
 
-          {/* Search & Filters */}
+        {/* Filters */}
+        <div className="px-6 py-4 bg-white/40 backdrop-blur-sm border-b border-white/40">
           <div className="flex items-center gap-3">
-            <div className="flex-1 relative max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-muted" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search models by name or algorithm..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 text-sm"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-white/40 bg-white/80 backdrop-blur-sm focus:outline-none focus:border-purple-primary focus:ring-2 focus:ring-purple-primary/20 text-sm"
               />
             </div>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 text-sm min-w-[140px]"
+              className="px-4 py-2.5 rounded-lg border border-white/40 bg-white/80 backdrop-blur-sm focus:outline-none focus:border-purple-primary focus:ring-2 focus:ring-purple-primary/20 text-sm min-w-[140px]"
             >
               <option value="all">All Status</option>
               <option value="promoted">Promoted</option>
               <option value="draft">Draft</option>
             </select>
           </div>
+        </div>
 
-          {/* Models */}
-            {/* Ensemble Models Section */}
+        {/* Content */}
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto space-y-6">
             {ensembleModels.length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                <div className="px-5 py-4 bg-purple-50 border-b border-purple-100">
+              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 bg-gradient-to-r from-purple-50 to-purple-50/50 border-b border-purple-200">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-purple-600" />
-                    <h2 className="font-semibold text-base text-purple-700">
-                      Ensemble Models
+                    <Sparkles className="w-5 h-5 text-purple-primary" />
+                    <h2 className="font-syne text-base font-bold text-purple-primary">
+                      Ensemble Models (Meta-Learners)
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-purple-600 text-white text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-purple-primary text-white text-sm font-bold">
                       {ensembleModels.length}
                     </span>
                   </div>
@@ -394,6 +454,10 @@ export default function ModelRegistryPage() {
                       isEnsemble={true}
                       trainingJob={findTrainingJob(model.algorithm)}
                       onClickTraining={() => navigate('/training')}
+                      isExpanded={expandedModels.has(model.id)}
+                      onToggle={() => toggleModel(model.id)}
+                      isCompareSelected={compareSelection.has(model.id)}
+                      onToggleCompare={() => toggleCompare(model.id)}
                     />
                   ))}
                 </div>
@@ -402,19 +466,19 @@ export default function ModelRegistryPage() {
 
             {/* Base Learners Section */}
             {baseLearners.length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                <div className="px-5 py-4 bg-gray-50 border-b border-gray-200">
+              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 bg-white/60 border-b border-white/40">
                   <div className="flex items-center gap-2">
                     <Brain className="w-5 h-5 text-blue-500" />
-                    <h2 className="font-semibold text-base text-gray-800">
+                    <h2 className="font-syne text-base font-bold text-black-text">
                       Base Learners
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 text-xs font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 text-sm font-bold">
                       {baseLearners.length}
                     </span>
                   </div>
                 </div>
-                <div className="p-5 grid grid-cols-2 gap-4">
+                <div className="p-5 space-y-2">
                   {baseLearners.filter(model => {
                     const matchesSearch = model.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                          model.algorithm.toLowerCase().includes(searchQuery.toLowerCase());
@@ -428,6 +492,10 @@ export default function ModelRegistryPage() {
                       isEnsemble={false}
                       trainingJob={findTrainingJob(model.algorithm)}
                       onClickTraining={() => navigate('/training')}
+                      isExpanded={expandedModels.has(model.id)}
+                      onToggle={() => toggleModel(model.id)}
+                      isCompareSelected={compareSelection.has(model.id)}
+                      onToggleCompare={() => toggleCompare(model.id)}
                     />
                   ))}
                 </div>
@@ -436,7 +504,7 @@ export default function ModelRegistryPage() {
 
             {/* Empty State */}
             {models.length === 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
+              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-12 text-center">
                 <Layers className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="font-syne text-lg font-bold text-black-text mb-2">No Models Found</h3>
                 <p className="text-sm text-gray-muted mb-6">Train your first model to get started</p>
@@ -452,12 +520,13 @@ export default function ModelRegistryPage() {
 
             {/* No Results from Filter */}
             {models.length > 0 && filteredModels.length === 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl p-8 text-center shadow-sm">
+              <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-8 text-center">
                 <Search className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                 <h3 className="font-syne text-base font-bold text-black-text mb-1">No matching models</h3>
                 <p className="text-sm text-gray-muted">Try adjusting your search or filters</p>
               </div>
             )}
+          </div>
         </div>
       </div>
 
@@ -492,6 +561,7 @@ export default function ModelRegistryPage() {
           error={ensembleError}
         />
       )}
+      </div>
     </DashboardLayout>
   );
 }
@@ -513,7 +583,7 @@ function StatCard({ icon: Icon, label, value, color }) {
           <Icon className={`w-5 h-5 ${c.text}`} />
         </div>
         <div>
-          <div className="text-xs text-gray-muted">{label}</div>
+          <div className="text-sm text-gray-muted">{label}</div>
           <div className="font-syne text-xl font-bold text-black-text">{value}</div>
         </div>
       </div>
@@ -552,127 +622,111 @@ const algorithmInfo = {
 };
 
 // Model Card Component
-function ModelCard({ model, onViewMetrics, isEnsemble, trainingJob, onClickTraining }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  
-  // Check if model is currently training
+function ModelCard({ model, onViewMetrics, isEnsemble, trainingJob, onClickTraining, isExpanded, onToggle, isCompareSelected, onToggleCompare }) {
   const isTraining = trainingJob && (trainingJob.status === 'queued' || trainingJob.status === 'running');
-  
   const statusConfig = {
     promoted: { color: 'text-green', bg: 'bg-green-dim', label: 'Promoted' },
-    draft: { color: 'text-amber', bg: 'bg-amber-dim', label: 'Draft' }
+    draft:    { color: 'text-amber', bg: 'bg-amber-dim', label: 'Draft' }
   };
-  const status = statusConfig[model.status];
-  
-  const algorithmDescription = algorithmInfo[model.algorithm] || algorithmInfo['default'];
+  const status = statusConfig[model.status] || statusConfig.draft;
+
+  const formatDate = (dt) => {
+    if (!dt) return 'N/A';
+    return new Date(dt).toLocaleDateString(undefined, { dateStyle: 'medium' });
+  };
 
   return (
-    <div 
-      className={`bg-white/60 border border-white/40 rounded-xl p-4 hover:shadow-lg hover:border-purple-primary/40 transition-all group ${isTraining ? 'cursor-pointer' : ''}`}
-      onClick={isTraining ? onClickTraining : undefined}
-    >
-      <div className="flex items-start gap-3 mb-3">
-        <div className={`w-10 h-10 rounded-lg ${isEnsemble ? 'bg-gradient-to-br from-purple-primary to-purple-primary/80' : 'bg-gradient-to-br from-blue-500 to-blue-600'} flex items-center justify-center flex-shrink-0 relative`}>
+    <div className={`border rounded-xl overflow-hidden transition-all ${isEnsemble ? 'border-purple-200' : 'border-gray-100'}`}>
+      {/* Collapsed row */}
+      <button
+        onClick={isTraining ? onClickTraining : onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isEnsemble ? 'bg-gradient-to-br from-purple-primary to-purple-primary/80' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
           {isTraining ? (
-            <Loader2 className="w-5 h-5 text-white animate-spin" />
+            <Loader2 className="w-4 h-4 text-white animate-spin" />
           ) : isEnsemble ? (
-            <Sparkles className="w-5 h-5 text-white" />
+            <Sparkles className="w-4 h-4 text-white" />
           ) : (
-            <Brain className="w-5 h-5 text-white" />
+            <Brain className="w-4 h-4 text-white" />
           )}
         </div>
+
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm text-black-text mb-1 truncate">{model.name}</h3>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-syne text-sm font-bold text-black-text truncate">{model.name}</span>
             {isTraining ? (
-              <span className="px-2 py-0.5 rounded bg-amber-dim text-amber font-medium flex items-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-dim text-amber flex items-center gap-1 flex-shrink-0">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
                 {trainingJob.status === 'queued' ? 'Queued' : 'Training'}
               </span>
             ) : (
-              <span className={`px-2 py-0.5 rounded ${status.bg} ${status.color} font-medium`}>
+              <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${status.bg} ${status.color} flex-shrink-0`}>
                 {status.label}
               </span>
             )}
-            <span className="text-gray-muted">{model.algorithm}</span>
-            <div className="relative">
-              <HelpCircle 
-                className="w-3.5 h-3.5 text-purple-primary cursor-help" 
-                onMouseEnter={() => setShowTooltip(true)}
-                onMouseLeave={() => setShowTooltip(false)}
-              />
-              {showTooltip && (
-                <div className="absolute left-0 top-5 z-10 w-64 p-3 bg-black/90 text-white text-xs rounded-lg shadow-lg">
-                  <div className="font-semibold mb-1">{model.algorithm}</div>
-                  <div className="text-white/90">{algorithmDescription}</div>
-                </div>
-              )}
+          </div>
+          <div className="text-[11px] text-gray-400 mt-0.5">{model.algorithm}</div>
+        </div>
+
+        {/* Summary metrics */}
+        <div className="flex items-center gap-4 flex-shrink-0 text-sm mr-2">
+          <div className="text-right">
+            <div className="text-[11px] text-gray-400">AUC</div>
+            <div className="font-bold text-purple-primary">{model.oof_auc ? (model.oof_auc * 100).toFixed(1) + '%' : model.accuracy + '%'}</div>
+          </div>
+          {model.createdAt && (
+            <div className="text-right hidden sm:block">
+              <div className="text-[11px] text-gray-400">Date</div>
+              <div className="text-gray-600">{formatDate(model.createdAt)}</div>
             </div>
-          </div>
+          )}
         </div>
-      </div>
-      
-      {/* Training Progress Bar */}
-      {isTraining && (
-        <div className="mb-3">
-          <div className="flex items-center justify-between text-xs text-gray-muted mb-1">
-            <span>Training Progress</span>
-            <span>{trainingJob.progress || 0}%</span>
-          </div>
-          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-amber to-amber/60 transition-all duration-500"
-              style={{ width: `${trainingJob.progress || 5}%` }}
-            />
-          </div>
-          <div className="mt-2 text-xs text-amber font-medium">
-            Click to view training details
-          </div>
-        </div>
-      )}
-
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-4 gap-2 mb-3">
-        <div className="bg-white/80 rounded-lg p-2">
-          <div className="text-[10px] text-gray-muted mb-0.5">Accuracy</div>
-          <div className="font-bold text-sm text-purple-primary">{model.accuracy}%</div>
-        </div>
-        <div className="bg-white/80 rounded-lg p-2">
-          <div className="text-[10px] text-gray-muted mb-0.5">Precision</div>
-          <div className="font-bold text-sm text-black-text">{model.precision}%</div>
-        </div>
-        <div className="bg-white/80 rounded-lg p-2">
-          <div className="text-[10px] text-gray-muted mb-0.5">Recall</div>
-          <div className="font-bold text-sm text-black-text">{model.recall}%</div>
-        </div>
-        <div className="bg-white/80 rounded-lg p-2">
-          <div className="text-[10px] text-gray-muted mb-0.5">F1 Score</div>
-          <div className="font-bold text-sm text-black-text">{model.f1Score}%</div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between text-xs text-gray-muted pt-3 border-t border-white/40">
-        <div className="flex items-center gap-3">
-          <span>{model.samples} samples</span>
-          <span>•</span>
-          <span>{model.features} features</span>
-        </div>
+        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+        {/* Compare checkbox */}
         <button
-          onClick={() => onViewMetrics(model.id)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-primary text-white hover:shadow-lg transition-all font-medium opacity-0 group-hover:opacity-100"
+          onClick={e => { e.stopPropagation(); onToggleCompare?.(); }}
+          title={isCompareSelected ? 'Remove from comparison' : 'Add to comparison'}
+          className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${isCompareSelected ? 'border-purple-primary bg-purple-primary' : 'border-gray-300 hover:border-purple-primary/60'}`}
         >
-          <Eye className="w-3.5 h-3.5" />
-          Details
+          {isCompareSelected && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
         </button>
-      </div>
+      </button>
 
-      {isEnsemble && model.baseModelIds.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-white/40">
-          <div className="flex items-center gap-1.5 text-xs text-purple-primary">
-            <GitBranch className="w-3.5 h-3.5" />
-            <span className="font-medium">Uses {model.baseModelIds.length} base learners</span>
+      {/* Expanded section */}
+      {isExpanded && !isTraining && (
+        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            {[
+              { label: 'OOF AUC (CV)', value: model.oof_auc ? (model.oof_auc * 100).toFixed(2) + '%' : null },
+              { label: 'Test AUC', value: model.test_auc ? (model.test_auc * 100).toFixed(2) + '%' : null },
+              { label: 'Accuracy', value: model.accuracy ? model.accuracy + '%' : null },
+              { label: 'Precision', value: model.precision !== 'N/A' ? model.precision + '%' : null },
+              { label: 'Recall',    value: model.recall !== 'N/A' ? model.recall + '%' : null },
+              { label: 'F1 Score',  value: model.f1Score !== 'N/A' ? model.f1Score + '%' : null },
+            ].filter(m => m.value != null).map(({ label, value }) => (
+              <div key={label} className="bg-white rounded-lg px-3 py-2 border border-gray-100">
+                <div className="text-[11px] text-gray-400 mb-0.5">{label}</div>
+                <div className="text-sm font-bold text-black-text">{value}</div>
+              </div>
+            ))}
           </div>
+          <div className="flex items-center justify-between text-sm text-gray-400">
+            <span>{model.samples || '—'} samples · {model.features || '—'} features</span>
+            <button
+              onClick={() => onViewMetrics(model.id)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-primary text-white text-sm hover:bg-purple-primary/90 transition-colors"
+            >
+              <Eye className="w-3 h-3" />
+              Full Metrics
+            </button>
+          </div>
+          {isEnsemble && model.baseModelIds?.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-1.5 text-sm text-purple-primary">
+              <GitBranch className="w-3 h-3" />
+              Uses {model.baseModelIds.length} base learners
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -755,7 +809,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
               <div>
                 <h3 className="font-semibold text-sm text-black-text mb-3">Confusion Matrix</h3>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <pre className="text-xs font-mono">{JSON.stringify(metrics.confusion_matrix, null, 2)}</pre>
+                  <pre className="text-sm font-mono">{JSON.stringify(metrics.confusion_matrix, null, 2)}</pre>
                 </div>
               </div>
             )}
@@ -771,7 +825,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
                     </button>
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
-                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
+                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-sm rounded shadow-lg" sideOffset={5}>
                       Download model artifacts
                       <Tooltip.Arrow className="fill-gray-900" />
                     </Tooltip.Content>
@@ -786,7 +840,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
                     </button>
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
-                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg" sideOffset={5}>
+                    <Tooltip.Content className="px-2.5 py-1.5 bg-gray-900 text-white text-sm rounded shadow-lg" sideOffset={5}>
                       Deploy to production
                       <Tooltip.Arrow className="fill-gray-900" />
                     </Tooltip.Content>
@@ -804,7 +858,7 @@ function ModelMetricsModal({ model, metrics, onClose }) {
 function MetricBox({ label, value }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-3">
-      <div className="text-xs text-gray-muted mb-1">{label}</div>
+      <div className="text-sm text-gray-muted mb-1">{label}</div>
       <div className="font-syne text-2xl font-bold text-purple-primary">{value}</div>
     </div>
   );
@@ -894,7 +948,7 @@ function EnsembleBuilderModal({
               disabled={isTraining}
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:border-purple-primary focus:ring-2 focus:ring-purple-primary/20 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            <p className="text-xs text-gray-muted mt-1.5">
+            <p className="text-sm text-gray-muted mt-1.5">
               Use the same dataset ID that was used to train the base models
             </p>
           </div>
@@ -911,7 +965,7 @@ function EnsembleBuilderModal({
               <button
                 onClick={toggleSelectAll}
                 disabled={isTraining || baseLearners.length === 0}
-                className="text-xs text-purple-primary hover:text-purple-primary/80 font-medium disabled:opacity-50"
+                className="text-sm text-purple-primary hover:text-purple-primary/80 font-medium disabled:opacity-50"
               >
                 {allSelected ? 'Deselect All' : 'Select All'}
               </button>
@@ -922,7 +976,7 @@ function EnsembleBuilderModal({
                 <div className="p-8 text-center">
                   <Brain className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-gray-muted">No base learners available</p>
-                  <p className="text-xs text-gray-muted mt-1">Train some base models first</p>
+                  <p className="text-sm text-gray-muted mt-1">Train some base models first</p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
@@ -947,11 +1001,11 @@ function EnsembleBuilderModal({
                             <span className="font-medium text-sm text-black-text truncate">
                               {model.name}
                             </span>
-                            <span className="text-xs text-gray-muted">
+                            <span className="text-sm text-gray-muted">
                               ({model.algorithm})
                             </span>
                           </div>
-                          <div className="flex items-center gap-4 text-xs text-gray-muted">
+                          <div className="flex items-center gap-4 text-sm text-gray-muted">
                             <span>Accuracy: <span className="font-medium text-purple-primary">{model.accuracy}%</span></span>
                             <span>F1: {model.f1Score}%</span>
                             <span>{model.samples} samples</span>
@@ -974,7 +1028,7 @@ function EnsembleBuilderModal({
                   <span className="font-medium">{selectedModels.length} models selected</span>
                 </div>
                 {selectedModels.length < 2 && (
-                  <span className="text-amber-600 text-xs">• Need at least 2 models</span>
+                  <span className="text-amber-600 text-sm">• Need at least 2 models</span>
                 )}
               </div>
             )}
@@ -1017,7 +1071,7 @@ function EnsembleBuilderModal({
           </div>
 
           {/* Meta-learner Info */}
-          <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
+          <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
             <div className="font-semibold text-black-text mb-1">ℹ️ Default Configuration</div>
             <div className="space-y-0.5">
               <div>• Meta-learner: Logistic Regression (optimized for stacking)</div>

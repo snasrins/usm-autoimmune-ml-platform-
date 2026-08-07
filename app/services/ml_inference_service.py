@@ -102,9 +102,19 @@ class MLInferenceService:
                 # Average across folds
                 final_probs = np.mean(all_probs, axis=0)[0]  # Shape: [n_classes]
             else:
-                # Single model
+                # Single model (or stacking ensemble)
                 model = self.minio.load_model(model_name, version)
-                final_probs = model.predict_proba(X)[0]  # Shape: [n_classes]
+                try:
+                    from app.ml.training.ensemble import StackingEnsemble
+                    is_stacking = isinstance(model, StackingEnsemble)
+                except Exception:
+                    is_stacking = False
+
+                if is_stacking:
+                    # Stacking ensemble: need base model predictions as input
+                    final_probs = self._predict_with_stacking_ensemble(model, metadata, X)
+                else:
+                    final_probs = model.predict_proba(X)[0]  # Shape: [n_classes]
             
             # Get predicted class (highest probability)
             predicted_class_idx = int(np.argmax(final_probs))
@@ -136,13 +146,99 @@ class MLInferenceService:
                 'class_mapping': class_mapping
             }
             
-            logger.info(f"Prediction made: {model_name} -> {prediction} (prob: {final_prob:.3f})")
+            logger.info(f"Prediction made: {model_name} -> {prediction} (confidence: {confidence:.3f})")
             
             return result
         
         except Exception as e:
             logger.error(f"Error making prediction: {e}")
             raise
+
+    def _predict_with_stacking_ensemble(
+        self,
+        ensemble: Any,
+        metadata: Dict,
+        X: pd.DataFrame
+    ) -> np.ndarray:
+        """
+        Run inference through a StackingEnsemble:
+        1. Load each base model from MinIO
+        2. Generate base predictions (avg across folds)
+        3. Feed into the meta-learner via ensemble.predict_proba()
+        """
+        base_model_minio_info = metadata.get('base_model_minio_info', {})
+        batch_id = metadata.get('batch_id', '')
+        batch_prefix = batch_id[:8] if len(batch_id) >= 8 else batch_id
+
+        base_predictions: Dict[str, np.ndarray] = {}
+        for base_name in ensemble.base_model_names:
+            info = base_model_minio_info.get(base_name)
+            if info:
+                bm_minio_name = info['minio_name']
+                bm_version = info['version']
+                n_folds = info.get('n_folds', 5)
+            else:
+                # Fallback: scan MinIO for the model
+                bm_minio_name = f"{batch_prefix}_{base_name}"
+                bm_version = self._find_model_version_in_minio(bm_minio_name)
+                if not bm_version:
+                    logger.warning(f"Cannot find base model {bm_minio_name} in MinIO; using zero")
+                    base_predictions[base_name] = np.array([0.0])
+                    continue
+                n_folds = self._count_fold_models_in_minio(bm_minio_name, bm_version)
+                if n_folds == 0:
+                    n_folds = 5  # default
+
+            fold_preds = []
+            for fold_idx in range(n_folds):
+                try:
+                    fm = self.minio.load_model(bm_minio_name, bm_version, fold_id=fold_idx)
+                    prob = fm.predict_proba(X)  # Shape: (1, n_classes)
+                    fold_preds.append(prob[:, -1])  # positive-class column
+                except Exception as e:
+                    logger.warning(f"Cannot load {bm_minio_name} fold {fold_idx}: {e}")
+
+            if fold_preds:
+                base_predictions[base_name] = np.mean(fold_preds, axis=0)  # (1,)
+            else:
+                base_predictions[base_name] = np.array([0.0])
+
+        # Run meta-learner
+        ensemble_out = ensemble.predict_proba(base_predictions)
+        # Binary: returns shape (n,) — positive-class probability
+        # Multiclass: returns shape (n, n_classes)
+        if ensemble.is_binary:
+            p = float(ensemble_out[0])
+            return np.array([1.0 - p, p])  # Reconstruct class probability array
+        else:
+            return ensemble_out[0]  # Shape: (n_classes,)
+
+    def _find_model_version_in_minio(self, minio_name: str) -> Optional[str]:
+        """Scan MinIO to find the latest version folder for a model name."""
+        try:
+            objects = list(self.minio.client.list_objects(
+                self.minio.models_bucket, prefix=f"{minio_name}/"
+            ))
+            versions = set()
+            for obj in objects:
+                parts = obj.object_name.split('/')
+                if len(parts) >= 2 and parts[1]:
+                    versions.add(parts[1])
+            return sorted(versions)[-1] if versions else None
+        except Exception as e:
+            logger.warning(f"MinIO scan failed for {minio_name}: {e}")
+            return None
+
+    def _count_fold_models_in_minio(self, minio_name: str, version: str) -> int:
+        """Count fold pkl files for a given model/version."""
+        try:
+            objects = list(self.minio.client.list_objects(
+                self.minio.models_bucket, prefix=f"{minio_name}/{version}/fold_"
+            ))
+            return len([o for o in objects if o.object_name.endswith('.pkl')])
+        except Exception as e:
+            logger.warning(f"Could not count folds for {minio_name}/{version}: {e}")
+            return 0
     
     def predict_batch(
         self,

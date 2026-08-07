@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 
 from app.services.minio_service import get_minio_service
 from app.ml.feature_engineering_pipeline import FeatureEngineeringPipeline
+from app.ml.training.ensemble import StackingEnsemble
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +98,11 @@ class SHAPExplainerService:
             # For multi-class, get SHAP values for predicted class
             if len(shap_values.shape) == 3:
                 # Shape: [n_samples, n_features, n_classes]
-                # Get predicted class
-                model = self.minio.load_model(model_name, version)
-                predicted_class = model.predict(X)[0]
+                # Determine predicted class from SHAP decomposition to avoid an
+                # extra MinIO round-trip (fold models exist; model.pkl does not).
+                ev = np.array(explainer.expected_value)      # shape: (n_classes,)
+                sv_sum = shap_values.values[0].sum(axis=0)   # shape: (n_classes,)
+                predicted_class = int(np.argmax(ev + sv_sum))
                 
                 # Extract SHAP values for predicted class
                 shap_values_for_class = shap_values[:, :, predicted_class]
@@ -107,7 +110,12 @@ class SHAPExplainerService:
             else:
                 # Binary classification or regression
                 shap_values_for_class = shap_values
-                base_value = explainer.expected_value
+                raw_bv = explainer.expected_value
+                # expected_value can be a scalar or 1-D array depending on model
+                if hasattr(raw_bv, '__len__'):
+                    base_value = raw_bv[1] if len(raw_bv) > 1 else raw_bv[0]
+                else:
+                    base_value = raw_bv
             
             # Get feature contributions
             shap_values_array = shap_values_for_class.values[0]
@@ -177,14 +185,31 @@ class SHAPExplainerService:
         Uses KernelExplainer for other models
         """
         try:
-            # Load model
+            # Load model — discover what files are actually in MinIO.
+            # Models are saved as fold_0.pkl … fold_N.pkl (CV) or model.pkl (non-CV).
+            # We try fold_0-4 first, then model.pkl. The first hit wins.
             n_folds = metadata.get('n_folds', 0)
-            
-            if n_folds > 1:
-                # For CV models, use first fold for explanation
-                model = self.minio.load_model(model_name, version, fold_id=0)
-            else:
-                model = self.minio.load_model(model_name, version)
+            max_folds = max(n_folds, 5)  # always probe at least 5 folds
+
+            model = None
+            for fold_id in range(max_folds):
+                try:
+                    model = self.minio.load_model(model_name, version, fold_id=fold_id)
+                    logger.info(f"Loaded fold_{fold_id} model for {model_name}/{version}")
+                    break
+                except Exception:
+                    continue
+
+            if model is None:
+                # Last resort: try the single model.pkl
+                try:
+                    model = self.minio.load_model(model_name, version)
+                    logger.info(f"Loaded model.pkl for {model_name}/{version}")
+                except Exception:
+                    raise ValueError(
+                        f"No model artifacts found in MinIO for {model_name}/{version}. "
+                        "Please retrain this model to enable explainability."
+                    )
             
             # Choose appropriate explainer based on model type
             model_type = model_name.lower()
@@ -193,14 +218,73 @@ class SHAPExplainerService:
                 logger.info(f"Using TreeExplainer for {model_name}")
                 # TreeExplainer for tree-based models (fast and exact)
                 explainer = shap.TreeExplainer(model)
+            elif isinstance(model, StackingEnsemble):
+                logger.info(f"Creating full-pipeline KernelExplainer for StackingEnsemble")
+                feat_names = metadata.get('feature_names', [])
+                base_model_minio_info = metadata.get('base_model_minio_info', {})
+
+                # Load one fold model per base learner from MinIO
+                loaded_base_models = {}
+                for bm_name_str, bm_info in base_model_minio_info.items():
+                    try:
+                        bm_model = self.minio.load_model(
+                            bm_info['minio_name'],
+                            bm_info['version'],
+                            fold_id=0
+                        )
+                        loaded_base_models[bm_name_str] = bm_model
+                        logger.info(f"  Loaded base model for ensemble: {bm_name_str}")
+                    except Exception as bm_e:
+                        logger.warning(f"  Could not load base model {bm_name_str}: {bm_e}")
+
+                # Build a lookup that maps both enum value and string form to the
+                # original key used inside the StackingEnsemble.
+                bm_name_map: dict = {}
+                for bm_key in model.base_model_names:
+                    val = bm_key.value if hasattr(bm_key, 'value') else str(bm_key)
+                    bm_name_map[val] = bm_key
+                    bm_name_map[str(bm_key)] = bm_key
+
+                def _ensemble_pipeline(
+                    X,
+                    _ens=model,
+                    _bms=loaded_base_models,
+                    _cols=feat_names,
+                    _nm=bm_name_map,
+                ):
+                    if not isinstance(X, pd.DataFrame):
+                        X = pd.DataFrame(X, columns=_cols)
+                    base_preds: dict = {}
+                    for bm_str, bm_model in _bms.items():
+                        orig_key = _nm.get(bm_str, bm_str)
+                        pred = bm_model.predict_proba(X)
+                        # For binary models keep positive-class probability (1-D)
+                        if pred.ndim == 2:
+                            pred = pred[:, -1]
+                        base_preds[orig_key] = pred
+                    proba = _ens.predict_proba(base_preds)
+                    # KernelExplainer requires 2-D (n_samples, n_classes)
+                    if proba.ndim == 1:
+                        proba = np.column_stack([1.0 - proba, proba])
+                    return proba
+
+                background = np.zeros((1, len(feat_names)))
+                explainer = shap.KernelExplainer(_ensemble_pipeline, background)
             else:
                 logger.info(f"Using KernelExplainer for {model_name}")
                 # KernelExplainer for other models (slower but model-agnostic)
                 # Need background data - use a small sample
                 # For now, use zero vector as background
-                feature_names = metadata.get('feature_names', [])
-                background = np.zeros((1, len(feature_names)))
-                explainer = shap.KernelExplainer(model.predict_proba, background)
+                feat_names = metadata.get('feature_names', [])
+                background = np.zeros((1, len(feat_names)))
+                # Wrap predict_proba to accept numpy arrays — sklearn stacking
+                # ensembles require DataFrame with named columns for pipeline
+                # steps that use column names (e.g. feature selectors).
+                def _safe_predict_proba(X, _model=model, _cols=feat_names):
+                    if not isinstance(X, pd.DataFrame):
+                        X = pd.DataFrame(X, columns=_cols)
+                    return _model.predict_proba(X)
+                explainer = shap.KernelExplainer(_safe_predict_proba, background)
             
             return explainer
         

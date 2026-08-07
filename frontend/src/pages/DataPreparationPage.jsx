@@ -35,6 +35,104 @@ import DashboardLayout from '../components/DashboardLayout';
 import RuleBasedLabelingWorkflow from '../components/RuleBasedLabelingWorkflow';
 import { mlAPI, flexibleAPI, labelingAPI } from '../services/api';
 
+// ─── Inflammatory & Immunological Feature Engineering Catalogue ──────────────
+// Each entry encodes the formula, required source columns, disease scope,
+// evidence base, and the reasoning why linear models cannot discover it alone.
+const FEATURE_CATALOG = {
+  crpEsrRatio: {
+    label: 'CRP/ESR Ratio',
+    formula: 'CRP ÷ ESR',
+    requires: ['CRP', 'ESR'],
+    evidenceTag: 'Acute-vs-chronic discriminator',
+    scope: 'SLE · RA · AS · Sjögren\'s · IBD · Vasculitis',
+    scopeNote:
+      'Not reliable in scleroderma (characteristically low CRP despite active fibrosis) or multiple sclerosis (CNS inflammation does not consistently raise peripheral markers).',
+    rationale:
+      'ESR rises slowly and reflects chronic background inflammation. CRP rises fast and captures acute responses. The ratio encodes whether a patient is experiencing an acute flare on top of chronic disease — information that exists in neither value alone.',
+    modelNote:
+      'Linear and logistic regression models only capture additive relationships. They cannot derive CRP÷ESR from raw columns; the feature must be provided explicitly.',
+  },
+  nlrRatio: {
+    label: 'NLR (Neutrophil-Lymphocyte Ratio)',
+    formula: 'Neutrophils ÷ Lymphocytes',
+    requires: ['Neutrophils', 'Lymphocytes'],
+    evidenceTag: 'Validated in >50 clinical studies',
+    scope: 'Universal — autoimmune and oncology',
+    scopeNote:
+      'Validated across SLE, RA, AS, IBD, Sjögren\'s, and Vasculitis. Also a prognostic marker in colorectal, lung, gastric, and ovarian cancer. The most broadly applicable single ratio in this catalogue.',
+    rationale:
+      'In SLE and RA, immune dysregulation consistently shifts this ratio. It is a validated predictor of disease activity, hospitalisation risk, and mortality across multiple autoimmune cohorts. Universally available from a full blood count.',
+    modelNote:
+      'LASSO and logistic regression need this ratio supplied explicitly. Providing raw neutrophil and lymphocyte counts and expecting the model to divide them requires exponentially more data than simply engineering the feature.',
+  },
+  plrRatio: {
+    label: 'PLR (Platelet-Lymphocyte Ratio)',
+    formula: 'Platelets ÷ Lymphocytes',
+    requires: ['Platelets', 'Lymphocytes'],
+    evidenceTag: 'Validated disease-severity surrogate',
+    scope: 'Universal — autoimmune and oncology',
+    scopeNote:
+      'Validated across most systemic inflammatory conditions and as a cancer prognostic marker. Evidence in multiple sclerosis is limited due to infrequent peripheral platelet dysregulation in CNS-predominant disease.',
+    rationale:
+      'Platelets rise during systemic inflammation; lymphocytes drop in active autoimmune disease. The ratio is a validated low-cost surrogate for disease severity when a formal scoring index (e.g., SLEDAI) is unavailable.',
+    modelNote:
+      'The cross-lineage relationship (thrombocyte count versus lymphocyte count) is invisible to models that see each column independently.',
+  },
+  sii: {
+    label: 'SII (Systemic Immune-Inflammation Index)',
+    formula: 'Platelets × Neutrophils ÷ Lymphocytes',
+    requires: ['Platelets', 'Neutrophils', 'Lymphocytes'],
+    evidenceTag: 'Cross-disease meta-analysis validated',
+    scope: 'Universal — autoimmune and oncology',
+    scopeNote:
+      'Meta-analysis validated across SLE, RA, IBD, AS, and six cancer types (colorectal, lung, gastric, ovarian, hepatocellular, cervical). The most universally applicable single derived index in this catalogue.',
+    rationale:
+      'SII integrates three immune lineages — platelet-mediated coagulation, neutrophil-driven innate immunity, and lymphocyte-driven adaptive immunity — into a single value that captures systemic immune dysregulation more completely than NLR or PLR alone. It is particularly useful when a researcher wants a single composite marker for cross-disease or cancer-adjacent studies.',
+    modelNote:
+      'The three-way multiplicative relationship is invisible to any linear model without explicit engineering. It also reduces the dimensionality cost of supplying Platelets, Neutrophils, and Lymphocytes as separate columns to a LASSO model.',
+  },
+  diseaseDuration: {
+    label: 'Disease Duration (Years)',
+    formula: 'Current Date − Diagnosis Date',
+    requires: ['DiagnosisDate (or equivalent)'],
+    evidenceTag: 'Fundamental clinical risk factor',
+    scope: 'Universal — all chronic diseases',
+    scopeNote:
+      'Applicable to any chronic condition with a definable diagnosis date, including autoimmune diseases, cancer, and chronic inflammatory conditions.',
+    rationale:
+      'A patient diagnosed 15 years ago carries fundamentally different accumulated organ damage, medication exposure, and tolerance patterns than one diagnosed last year. A raw calendar date is a high-cardinality nominal value; converted to duration it becomes a meaningful continuous predictor.',
+    modelNote:
+      'Raw dates cannot be used as-is in ML. Converting to years-since-diagnosis transforms a nominal timestamp into an informative continuous variable.',
+  },
+  inflammationScore: {
+    label: 'Inflammation Index',
+    formula: 'Mean(CRP, ESR)',
+    requires: ['CRP', 'ESR'],
+    evidenceTag: 'Reduces multicollinearity',
+    scope: 'SLE · RA · AS · IBD · Vasculitis',
+    scopeNote:
+      'Applies wherever both CRP and ESR are routinely measured. Less informative in scleroderma or MS where one or both markers are unreliable indicators of disease activity.',
+    rationale:
+      'CRP and ESR are correlated (r > 0.6 in most cohorts). Feeding both raw values to a linear model inflates variance and destabilises coefficient estimates. A combined index reduces this multicollinearity while preserving the inflammatory signal for feature selection.',
+    modelNote:
+      'LASSO shrinkage is biased by correlated predictors — one of the pair is arbitrarily zeroed. A combined index gives LASSO a single stable handle on the inflammatory signal.',
+  },
+  organInvolvement: {
+    label: 'Organ Involvement Count',
+    formula: 'Sum of binary organ-system flags',
+    requires: ['Joint_involvement', 'Kidney_involvement', 'Skin_involvement', '...'],
+    evidenceTag: 'Mirrors SLEDAI scoring methodology',
+    scope: 'SLE · MCTD · Vasculitis · multi-system diseases',
+    scopeNote:
+      'Optimised for multi-system diseases using SLEDAI-aligned organ flags. For ankylosing spondylitis, IBD, or MS, organ flag definitions differ; this feature is still applicable but column selection must align with the disease-specific activity index.',
+    rationale:
+      'Individual organ flags are sparse binary columns that each contribute little signal. Their sum is a direct disease-severity ordinal that aligns with how clinicians calculate SLEDAI scores — the count of affected organ systems is a cornerstone of every validated multi-system autoimmune activity index.',
+    modelNote:
+      'Sparse individual binary flags contribute weak signal. Their sum creates a high-signal ordinal severity variable that is far more informative per feature slot.',
+  },
+};
+// ──────────────────────────────────────────────────────────────────────────────
+
 // Label type configurations for different prediction tasks
 const LABEL_TYPES = {
   'labels_disease_classification': {
@@ -175,6 +273,7 @@ export default function DataPreparationPage() {
     crpEsrRatio: true,
     nlrRatio: true,
     plrRatio: true,
+    siiIndex: false,         // off by default — requires Platelets + Neutrophils + Lymphocytes
     enableTemporal: true,
     diseaseDuration: true,
     enableDerived: true,
@@ -182,6 +281,8 @@ export default function DataPreparationPage() {
     organInvolvement: false
   });
   const [featureEngineeringResults, setFeatureEngineeringResults] = useState(null);
+  const [expandedFeature, setExpandedFeature] = useState(null); // key of FEATURE_CATALOG currently expanded
+  const [showFeatureRationale, setShowFeatureRationale] = useState(false); // "Why Feature Engineering?" panel
   const [selectedFeatures, setSelectedFeatures] = useState([]);
   const [scalingMethod, setScalingMethod] = useState('standard');
   const [featureConfig, setFeatureConfig] = useState({
@@ -618,24 +719,34 @@ export default function DataPreparationPage() {
   const isPreprocessingComplete = preprocessingStep === 'complete'; // All 4 steps done
   const isFeaturesComplete = featureEngineeringResults !== null;
   const isValidationComplete = validationResults && validationResults.errors === 0;
-  const stepsCompleted = [isUploadComplete, isLabelingComplete, isTargetComplete, isPreprocessingComplete, isFeaturesComplete, finalFeatures.length > 0, isValidationComplete].filter(Boolean).length;
-  const readinessPct = Math.round(stepsCompleted / 7 * 100);
   
   // Save configuration
-  const saveConfiguration = () => {
-    const config = {
-      dataset_id: selectedBatch?.id,
-      target_column: labelType,
-      selected_features: selectedFeatures,
-      train_test_split: trainTestSplit,
-      stratify: stratifyEnabled,
-      scaling_method: scalingMethod,
-      feature_config: featureConfig,
-      saved_at: new Date().toISOString()
-    };
-    console.log('Configuration saved:', config);
-    // TODO: Implement API call to save configuration
-    alert('Configuration saved successfully!');
+  const saveConfiguration = async () => {
+    // If in preprocessing flow, persist the session to the database
+    if (fromPreprocessing && sessionData?.sessionId) {
+      try {
+        setLoading(true);
+        const result = await flexibleAPI.saveToDatabase(
+          sessionData.sessionId,
+          sessionData.datasetName || 'ML Prepared Dataset'
+        );
+        sessionStorage.setItem('current_batch_id', result.batch_id);
+        sessionStorage.setItem('current_target_column', labelType);
+        alert('Draft saved. Your preprocessed dataset is now available in Training Jobs.');
+      } catch (error) {
+        // If already saved, that's fine — just inform the user
+        if (error?.response?.status === 409 || error?.message?.includes('already')) {
+          alert('This dataset was already saved. It is available in Training Jobs.');
+        } else {
+          alert(`Failed to save draft: ${error.message}`);
+        }
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Non-preprocessing flow: config is held locally, no backend save needed
+      alert('Configuration saved locally. Click "Proceed to Training" to start training.');
+    }
   };
   
   // Handle "Proceed to Training" - save to database if from preprocessing
@@ -827,7 +938,7 @@ export default function DataPreparationPage() {
 
   return (
     <DashboardLayout>
-      <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.78 }}>
+      <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #EBEBEE 0%, #E8E5F5 50%, #F0EDF8 100%)', zoom: 0.75 }}>
         
         {/* QUEUE VIEW: Show dataset list with ML prep status */}
         {viewMode === 'queue' && (
@@ -1165,7 +1276,7 @@ export default function DataPreparationPage() {
           <>
         {/* Header */}
         <div className="bg-white/60 backdrop-blur-sm border-b border-white/40">
-          <div className="px-5 py-4">
+          <div className="px-6 py-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <button
@@ -1421,7 +1532,7 @@ export default function DataPreparationPage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-5">
+        <div className="flex-1 p-6">
           <div className="max-w-7xl mx-auto">
             {/* TAB 1: Upload & Import */}
             {activeTab === 'upload' && (
@@ -1628,7 +1739,7 @@ export default function DataPreparationPage() {
                       
                       <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
                         <p className="text-xs text-purple-700">
-                          <strong>What this means:</strong> Your labeled data shows {Object.keys(targetDistribution).length} different diagnoses. 
+                          <strong>📊 What this means:</strong> Your labeled data shows {Object.keys(targetDistribution).length} different diagnoses. 
                           The ML model will learn to distinguish between these based on biomarker patterns.
                         </p>
                       </div>
@@ -1938,33 +2049,10 @@ export default function DataPreparationPage() {
                     <Settings className="w-4 h-4 text-white" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-sm font-bold text-purple-900 mb-1">ML Data Preprocessing Pipeline</h3>
-                    <p className="text-xs text-purple-700 mb-2">
+                    <h3 className="text-sm font-bold text-purple-900 mb-1">Data Preprocessing Pipeline</h3>
+                    <p className="text-xs text-purple-700">
                       Transform raw data following research standards: <strong>Variable Filtration</strong> → <strong>Imputation</strong> → <strong>Winsorization</strong> → <strong>Standardization</strong>
                     </p>
-                    <div className="bg-white/70 border border-purple-200 rounded-lg p-3 text-xs text-purple-800">
-                      <strong>How is this different from Data Cleaning (Auto-Clean)?</strong>
-                      <div className="mt-1.5 grid grid-cols-2 gap-2">
-                        <div className="bg-purple-50 rounded p-2">
-                          <div className="font-semibold text-purple-700 mb-1">Data Cleaning (optional, earlier)</div>
-                          <div className="text-gray-600 space-y-0.5">
-                            <div>• Fill NAs with median/mode</div>
-                            <div>• Remove duplicate rows</div>
-                            <div>• IQR-based outlier capping (1.5×)</div>
-                          </div>
-                        </div>
-                        <div className="bg-indigo-50 rounded p-2">
-                          <div className="font-semibold text-indigo-700 mb-1">ML Preprocessing (required, here)</div>
-                          <div className="text-gray-600 space-y-0.5">
-                            <div>• Drop features &gt;50% missing (column-level)</div>
-                            <div>• Research-grade imputation</div>
-                            <div>• 1%/99% winsorization (less aggressive)</div>
-                            <div>• Z-score standardization for ML</div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-2 text-gray-500">Run both in sequence for best results — they operate at different levels and do not conflict.</div>
-                    </div>
                   </div>
                 </div>
 
@@ -2310,32 +2398,84 @@ export default function DataPreparationPage() {
             {/* TAB 5: Feature Engineering */}
             {activeTab === 'features' && selectedBatch && (
               <div className="space-y-6">
-                {/* Info Banner */}
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center flex-shrink-0">
-                    <Zap className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-sm text-purple-900 mb-1">Feature Engineering for Autoimmune Diseases</h4>
-                    <p className="text-xs text-purple-700 leading-relaxed">
-                      Create clinically meaningful features from raw biomarker data. These derived features (ratios, indices, temporal) 
-                      capture complex disease patterns that improve model accuracy and interpretability.
-                    </p>
+                {/* ── Info Banner ──────────────────────────────────────────── */}
+                <div className="bg-white border border-gray-200 rounded-xl p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-sm text-gray-900 mb-1">
+                        Inflammatory &amp; Immunological Feature Engineering
+                      </h4>
+                      <p className="text-xs text-gray-600 leading-relaxed">
+                        Derives new predictive features from raw biomarker columns.
+                        These features are <strong className="text-gray-800">not redundant</strong> with raw data —
+                        they encode non-linear relationships (ratios, products, temporal deltas) that linear models
+                        cannot discover from raw columns alone. Scope is optimised for systemic inflammatory
+                        conditions; NLR, PLR, and SII are additionally validated in oncology contexts.
+                      </p>
+                      <p className="text-xs text-gray-400 mt-2">
+                        Click the info icon on any feature to view its formula, required columns, clinical evidence, and scope notes.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowFeatureRationale(!showFeatureRationale)}
+                      className="flex-shrink-0 text-xs font-medium text-purple-600 hover:text-purple-800 border border-purple-200 hover:border-purple-400 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      {showFeatureRationale ? 'Hide' : 'Why not let the model figure it out?'}
+                    </button>
                   </div>
                 </div>
 
-                {/* Feature Engineering Configuration */}
+                {/* ── Collapsible model-limitation rationale ───────────────── */}
+                {showFeatureRationale && (
+                  <div className="bg-slate-900 text-slate-100 rounded-xl p-5 text-xs leading-relaxed space-y-4">
+                    <div className="font-semibold text-slate-100 text-sm">
+                      Why feature engineering cannot be skipped
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-800 rounded-lg p-4 space-y-1.5">
+                        <div className="font-semibold text-slate-200">Linear models — LASSO, Logistic Regression</div>
+                        <p className="text-slate-400">
+                          Only capture additive relationships. CRP÷ESR requires division — a non-linear operation
+                          that is structurally invisible to these models regardless of dataset size.
+                        </p>
+                      </div>
+                      <div className="bg-slate-800 rounded-lg p-4 space-y-1.5">
+                        <div className="font-semibold text-slate-200">Tree models — Random Forest, XGBoost</div>
+                        <p className="text-slate-400">
+                          Can approximate ratios through recursive splits, but require many splits and large
+                          datasets to do so. Providing the ratio explicitly is far more data-efficient and
+                          produces interpretable feature importance scores.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="border-t border-slate-700 pt-4 text-slate-400 space-y-1">
+                      <p>
+                        <strong className="text-slate-300">Feature Scaling</strong> (handled in the previous tab) normalises
+                        existing values. <strong className="text-slate-300">Feature Engineering</strong> creates new information
+                        that does not exist anywhere in the raw data. They serve different purposes in the ML pipeline.
+                      </p>
+                      <p>All features in this catalogue are derived from published clinical indices — not speculative constructs.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Feature Engineering Configuration ───────────────────── */}
                 <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
-                  <h3 className="font-syne text-lg font-bold text-black-text mb-4">Clinical Feature Engineering</h3>
+                  <h3 className="font-syne text-lg font-bold text-black-text mb-1">Feature Engineering</h3>
                   <p className="text-sm text-gray-muted mb-6">
-                    Select features to engineer from your biomarker data. Each feature is clinically validated for autoimmune disease diagnostics.
+                    Select features to derive. Each entry shows its formula, required source columns, and disease scope.
+                    Click the info icon to expand the full clinical justification.
                   </p>
-                  
+
                   <div className="space-y-6">
-                    {/* Ratio Features */}
+
+                    {/* ── Biomarker & Immune Ratios ────────────────────────── */}
                     <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-semibold text-sm text-gray-900">Biomarker Ratios</h4>
+                        <div>
+                          <h4 className="font-semibold text-sm text-gray-900">Biomarker &amp; Immune Ratios</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">Ratio features encode non-linear relationships invisible to linear models</p>
+                        </div>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -2345,78 +2485,169 @@ export default function DataPreparationPage() {
                               enableRatios: e.target.checked,
                               crpEsrRatio: e.target.checked,
                               nlrRatio: e.target.checked,
-                              plrRatio: e.target.checked
+                              plrRatio: e.target.checked,
+                              siiIndex: e.target.checked,
                             })}
                             className="w-4 h-4 text-purple-primary rounded"
                           />
                           <span className="text-xs font-semibold text-purple-600">Enable All</span>
                         </label>
                       </div>
-                      
-                      <div className="space-y-3">
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureEngineeringConfig.crpEsrRatio}
-                            onChange={(e) => setFeatureEngineeringConfig({
-                              ...featureEngineeringConfig,
-                              crpEsrRatio: e.target.checked
-                            })}
-                            disabled={!featureEngineeringConfig.enableRatios}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">CRP/ESR Ratio</span>
-                            <p className="text-xs text-gray-600 mt-0.5">
-                              Inflammatory marker ratio. High values indicate active inflammation.
-                            </p>
-                          </div>
-                        </label>
-                        
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureEngineeringConfig.nlrRatio}
-                            onChange={(e) => setFeatureEngineeringConfig({
-                              ...featureEngineeringConfig,
-                              nlrRatio: e.target.checked
-                            })}
-                            disabled={!featureEngineeringConfig.enableRatios}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">NLR (Neutrophil-Lymphocyte Ratio)</span>
-                            <p className="text-xs text-gray-600 mt-0.5">
-                              Systemic inflammation marker. Elevated in active SLE and RA.
-                            </p>
-                          </div>
-                        </label>
-                        
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureEngineeringConfig.plrRatio}
-                            onChange={(e) => setFeatureEngineeringConfig({
-                              ...featureEngineeringConfig,
-                              plrRatio: e.target.checked
-                            })}
-                            disabled={!featureEngineeringConfig.enableRatios}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">PLR (Platelet-Lymphocyte Ratio)</span>
-                            <p className="text-xs text-gray-600 mt-0.5">
-                              Inflammatory state marker. Useful for disease activity assessment.
-                            </p>
-                          </div>
-                        </label>
+
+                      <div className="space-y-2">
+                        {/* CRP/ESR Ratio */}
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                          <label className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-3 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={featureEngineeringConfig.crpEsrRatio}
+                              onChange={(e) => setFeatureEngineeringConfig({ ...featureEngineeringConfig, crpEsrRatio: e.target.checked })}
+                              disabled={!featureEngineeringConfig.enableRatios}
+                              className="w-4 h-4 text-purple-primary rounded mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-gray-900 font-medium">{FEATURE_CATALOG.crpEsrRatio.label}</span>
+                                <code className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono border border-slate-200">{FEATURE_CATALOG.crpEsrRatio.formula}</code>
+                                <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">{FEATURE_CATALOG.crpEsrRatio.evidenceTag}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">Requires: {FEATURE_CATALOG.crpEsrRatio.requires.join(', ')}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">Scope: {FEATURE_CATALOG.crpEsrRatio.scope}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setExpandedFeature(expandedFeature === 'crpEsrRatio' ? null : 'crpEsrRatio'); }}
+                              className="text-gray-400 hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                            </button>
+                          </label>
+                          {expandedFeature === 'crpEsrRatio' && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100 text-xs space-y-2">
+                              <div><span className="font-semibold text-gray-800">Clinical rationale: </span><span className="text-gray-700">{FEATURE_CATALOG.crpEsrRatio.rationale}</span></div>
+                              <div className="bg-white border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Why linear models cannot derive this: </span>{FEATURE_CATALOG.crpEsrRatio.modelNote}</div>
+                              <div className="bg-amber-50 border border-amber-100 rounded p-2 text-amber-800"><span className="font-semibold">Scope note: </span>{FEATURE_CATALOG.crpEsrRatio.scopeNote}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* NLR */}
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                          <label className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-3 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={featureEngineeringConfig.nlrRatio}
+                              onChange={(e) => setFeatureEngineeringConfig({ ...featureEngineeringConfig, nlrRatio: e.target.checked })}
+                              disabled={!featureEngineeringConfig.enableRatios}
+                              className="w-4 h-4 text-purple-primary rounded mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-gray-900 font-medium">{FEATURE_CATALOG.nlrRatio.label}</span>
+                                <code className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono border border-slate-200">{FEATURE_CATALOG.nlrRatio.formula}</code>
+                                <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100">{FEATURE_CATALOG.nlrRatio.evidenceTag}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">Requires: {FEATURE_CATALOG.nlrRatio.requires.join(', ')}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">Scope: {FEATURE_CATALOG.nlrRatio.scope}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setExpandedFeature(expandedFeature === 'nlrRatio' ? null : 'nlrRatio'); }}
+                              className="text-gray-400 hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                            </button>
+                          </label>
+                          {expandedFeature === 'nlrRatio' && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100 text-xs space-y-2">
+                              <div><span className="font-semibold text-gray-800">Clinical rationale: </span><span className="text-gray-700">{FEATURE_CATALOG.nlrRatio.rationale}</span></div>
+                              <div className="bg-white border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Why linear models cannot derive this: </span>{FEATURE_CATALOG.nlrRatio.modelNote}</div>
+                              <div className="bg-green-50 border border-green-100 rounded p-2 text-green-800"><span className="font-semibold">Scope note: </span>{FEATURE_CATALOG.nlrRatio.scopeNote}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* PLR */}
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                          <label className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-3 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={featureEngineeringConfig.plrRatio}
+                              onChange={(e) => setFeatureEngineeringConfig({ ...featureEngineeringConfig, plrRatio: e.target.checked })}
+                              disabled={!featureEngineeringConfig.enableRatios}
+                              className="w-4 h-4 text-purple-primary rounded mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-gray-900 font-medium">{FEATURE_CATALOG.plrRatio.label}</span>
+                                <code className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono border border-slate-200">{FEATURE_CATALOG.plrRatio.formula}</code>
+                                <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100">{FEATURE_CATALOG.plrRatio.evidenceTag}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">Requires: {FEATURE_CATALOG.plrRatio.requires.join(', ')}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">Scope: {FEATURE_CATALOG.plrRatio.scope}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setExpandedFeature(expandedFeature === 'plrRatio' ? null : 'plrRatio'); }}
+                              className="text-gray-400 hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                            </button>
+                          </label>
+                          {expandedFeature === 'plrRatio' && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100 text-xs space-y-2">
+                              <div><span className="font-semibold text-gray-800">Clinical rationale: </span><span className="text-gray-700">{FEATURE_CATALOG.plrRatio.rationale}</span></div>
+                              <div className="bg-white border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Why linear models cannot derive this: </span>{FEATURE_CATALOG.plrRatio.modelNote}</div>
+                              <div className="bg-green-50 border border-green-100 rounded p-2 text-green-800"><span className="font-semibold">Scope note: </span>{FEATURE_CATALOG.plrRatio.scopeNote}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* SII */}
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                          <label className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-3 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={featureEngineeringConfig.siiIndex}
+                              onChange={(e) => setFeatureEngineeringConfig({ ...featureEngineeringConfig, siiIndex: e.target.checked })}
+                              disabled={!featureEngineeringConfig.enableRatios}
+                              className="w-4 h-4 text-purple-primary rounded mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-gray-900 font-medium">{FEATURE_CATALOG.sii.label}</span>
+                                <code className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono border border-slate-200">{FEATURE_CATALOG.sii.formula}</code>
+                                <span className="text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded border border-teal-100">{FEATURE_CATALOG.sii.evidenceTag}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">Requires: {FEATURE_CATALOG.sii.requires.join(', ')}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">Scope: {FEATURE_CATALOG.sii.scope}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setExpandedFeature(expandedFeature === 'sii' ? null : 'sii'); }}
+                              className="text-gray-400 hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                            </button>
+                          </label>
+                          {expandedFeature === 'sii' && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100 text-xs space-y-2">
+                              <div><span className="font-semibold text-gray-800">Clinical rationale: </span><span className="text-gray-700">{FEATURE_CATALOG.sii.rationale}</span></div>
+                              <div className="bg-white border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Why linear models cannot derive this: </span>{FEATURE_CATALOG.sii.modelNote}</div>
+                              <div className="bg-teal-50 border border-teal-100 rounded p-2 text-teal-800"><span className="font-semibold">Scope note: </span>{FEATURE_CATALOG.sii.scopeNote}</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    
-                    {/* Temporal Features */}
+
+                    {/* ── Temporal Features ────────────────────────────────── */}
                     <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-semibold text-sm text-gray-900">Temporal Features</h4>
+                        <div>
+                          <h4 className="font-semibold text-sm text-gray-900">Temporal Features</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">Converts timestamps into predictive continuous variables</p>
+                        </div>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -2431,33 +2662,53 @@ export default function DataPreparationPage() {
                           <span className="text-xs font-semibold text-purple-600">Enable All</span>
                         </label>
                       </div>
-                      
-                      <div className="space-y-3">
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureEngineeringConfig.diseaseDuration}
-                            onChange={(e) => setFeatureEngineeringConfig({
-                              ...featureEngineeringConfig,
-                              diseaseDuration: e.target.checked
-                            })}
-                            disabled={!featureEngineeringConfig.enableTemporal}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">Disease Duration (Years)</span>
-                            <p className="text-xs text-gray-600 mt-0.5">
-                              Time since diagnosis. Longer duration correlates with cumulative organ damage.
-                            </p>
-                          </div>
-                        </label>
+
+                      <div className="space-y-2">
+                        {/* Disease Duration */}
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                          <label className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-3 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={featureEngineeringConfig.diseaseDuration}
+                              onChange={(e) => setFeatureEngineeringConfig({ ...featureEngineeringConfig, diseaseDuration: e.target.checked })}
+                              disabled={!featureEngineeringConfig.enableTemporal}
+                              className="w-4 h-4 text-purple-primary rounded mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-gray-900 font-medium">{FEATURE_CATALOG.diseaseDuration.label}</span>
+                                <code className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono border border-slate-200">{FEATURE_CATALOG.diseaseDuration.formula}</code>
+                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">{FEATURE_CATALOG.diseaseDuration.evidenceTag}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">Requires: {FEATURE_CATALOG.diseaseDuration.requires.join(', ')}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">Scope: {FEATURE_CATALOG.diseaseDuration.scope}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setExpandedFeature(expandedFeature === 'diseaseDuration' ? null : 'diseaseDuration'); }}
+                              className="text-gray-400 hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                            </button>
+                          </label>
+                          {expandedFeature === 'diseaseDuration' && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100 text-xs space-y-2">
+                              <div><span className="font-semibold text-gray-800">Clinical rationale: </span><span className="text-gray-700">{FEATURE_CATALOG.diseaseDuration.rationale}</span></div>
+                              <div className="bg-white border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Why linear models cannot derive this: </span>{FEATURE_CATALOG.diseaseDuration.modelNote}</div>
+                              <div className="bg-slate-100 border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Scope note: </span>{FEATURE_CATALOG.diseaseDuration.scopeNote}</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    
-                    {/* Derived Features */}
+
+                    {/* ── Derived Indices ──────────────────────────────────── */}
                     <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-semibold text-sm text-gray-900">Derived Indices</h4>
+                        <div>
+                          <h4 className="font-semibold text-sm text-gray-900">Derived Indices</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">Composite scores that reduce multicollinearity and mirror validated clinical activity indices</p>
+                        </div>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -2473,45 +2724,79 @@ export default function DataPreparationPage() {
                           <span className="text-xs font-semibold text-purple-600">Enable All</span>
                         </label>
                       </div>
-                      
-                      <div className="space-y-3">
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureEngineeringConfig.inflammationScore}
-                            onChange={(e) => setFeatureEngineeringConfig({
-                              ...featureEngineeringConfig,
-                              inflammationScore: e.target.checked
-                            })}
-                            disabled={!featureEngineeringConfig.enableDerived}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">Inflammation Index</span>
-                            <p className="text-xs text-gray-600 mt-0.5">
-                              Combined score (mean of CRP and ESR). Unified inflammation metric.
-                            </p>
-                          </div>
-                        </label>
-                        
-                        <label className="flex items-start gap-3 cursor-pointer hover:bg-white rounded p-2 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={featureEngineeringConfig.organInvolvement}
-                            onChange={(e) => setFeatureEngineeringConfig({
-                              ...featureEngineeringConfig,
-                              organInvolvement: e.target.checked
-                            })}
-                            disabled={!featureEngineeringConfig.enableDerived}
-                            className="w-4 h-4 text-purple-primary rounded mt-0.5"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-gray-900 font-medium">Organ Involvement Count</span>
-                            <p className="text-xs text-gray-600 mt-0.5">
-                              Number of affected organ systems. Disease severity indicator.
-                            </p>
-                          </div>
-                        </label>
+
+                      <div className="space-y-2">
+                        {/* Inflammation Index */}
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                          <label className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-3 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={featureEngineeringConfig.inflammationScore}
+                              onChange={(e) => setFeatureEngineeringConfig({ ...featureEngineeringConfig, inflammationScore: e.target.checked })}
+                              disabled={!featureEngineeringConfig.enableDerived}
+                              className="w-4 h-4 text-purple-primary rounded mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-gray-900 font-medium">{FEATURE_CATALOG.inflammationScore.label}</span>
+                                <code className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono border border-slate-200">{FEATURE_CATALOG.inflammationScore.formula}</code>
+                                <span className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded border border-orange-100">{FEATURE_CATALOG.inflammationScore.evidenceTag}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">Requires: {FEATURE_CATALOG.inflammationScore.requires.join(', ')}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">Scope: {FEATURE_CATALOG.inflammationScore.scope}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setExpandedFeature(expandedFeature === 'inflammationScore' ? null : 'inflammationScore'); }}
+                              className="text-gray-400 hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                            </button>
+                          </label>
+                          {expandedFeature === 'inflammationScore' && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100 text-xs space-y-2">
+                              <div><span className="font-semibold text-gray-800">Clinical rationale: </span><span className="text-gray-700">{FEATURE_CATALOG.inflammationScore.rationale}</span></div>
+                              <div className="bg-white border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Why linear models cannot derive this: </span>{FEATURE_CATALOG.inflammationScore.modelNote}</div>
+                              <div className="bg-amber-50 border border-amber-100 rounded p-2 text-amber-800"><span className="font-semibold">Scope note: </span>{FEATURE_CATALOG.inflammationScore.scopeNote}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Organ Involvement Count */}
+                        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                          <label className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-3 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={featureEngineeringConfig.organInvolvement}
+                              onChange={(e) => setFeatureEngineeringConfig({ ...featureEngineeringConfig, organInvolvement: e.target.checked })}
+                              disabled={!featureEngineeringConfig.enableDerived}
+                              className="w-4 h-4 text-purple-primary rounded mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm text-gray-900 font-medium">{FEATURE_CATALOG.organInvolvement.label}</span>
+                                <code className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono border border-slate-200">{FEATURE_CATALOG.organInvolvement.formula}</code>
+                                <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">{FEATURE_CATALOG.organInvolvement.evidenceTag}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">Requires: {FEATURE_CATALOG.organInvolvement.requires.join(', ')}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">Scope: {FEATURE_CATALOG.organInvolvement.scope}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setExpandedFeature(expandedFeature === 'organInvolvement' ? null : 'organInvolvement'); }}
+                              className="text-gray-400 hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                            </button>
+                          </label>
+                          {expandedFeature === 'organInvolvement' && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100 text-xs space-y-2">
+                              <div><span className="font-semibold text-gray-800">Clinical rationale: </span><span className="text-gray-700">{FEATURE_CATALOG.organInvolvement.rationale}</span></div>
+                              <div className="bg-white border border-slate-200 rounded p-2 text-slate-600"><span className="font-semibold">Why linear models cannot derive this: </span>{FEATURE_CATALOG.organInvolvement.modelNote}</div>
+                              <div className="bg-amber-50 border border-amber-100 rounded p-2 text-amber-800"><span className="font-semibold">Scope note: </span>{FEATURE_CATALOG.organInvolvement.scopeNote}</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                     
@@ -2590,18 +2875,6 @@ export default function DataPreparationPage() {
                       )}
                     </div>
                   )}
-                </div>
-                
-                {/* Note: Scaling removed — handled by Preprocessing Step 4 (Standardization) */}
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-blue-900">Feature Scaling is already handled</p>
-                    <p className="text-xs text-blue-700 mt-0.5">
-                      Z-score standardisation was applied during <strong>Preprocessing Step 4 (Standardisation)</strong>. No additional scaling is needed here — applying it twice would distort the data.
-                      If you skipped Preprocessing, go back and run it first.
-                    </p>
-                  </div>
                 </div>
               </div>
             )}
@@ -3127,244 +3400,257 @@ export default function DataPreparationPage() {
 
             {/* TAB 8: Summary */}
             {activeTab === 'summary' && selectedBatch && (
-              <div className="space-y-5">
-
-                {/* Hero Banner */}
-                <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)' }}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="font-syne text-2xl font-bold mb-1">ML Preparation Summary</h2>
-                      <p className="text-purple-200 text-sm truncate max-w-md">{selectedBatch.name}</p>
-                      <p className="text-purple-300 text-xs mt-1">Batch ID: {selectedBatch.id?.substring(0,12)}…</p>
-                    </div>
-                    <div className="text-right flex-shrink-0 ml-6">
-                      <div className="text-5xl font-bold">{stepsCompleted}<span className="text-2xl text-purple-300">/7</span></div>
-                      <div className="text-purple-200 text-sm mt-1">Steps Complete</div>
-                      <div className="mt-2 w-32 h-2 bg-purple-900/40 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-white/80" style={{ width: `${readinessPct}%` }} />
+              <div className="space-y-6">
+                {/* Configuration Summary Card */}
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 rounded-2xl p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-purple-primary flex items-center justify-center">
+                        <BarChart3 className="w-5 h-5 text-white" />
                       </div>
-                      <div className="text-purple-200 text-xs mt-1">{readinessPct}% ready</div>
+                      <h3 className="font-syne text-xl font-bold text-purple-primary">Configuration Summary</h3>
                     </div>
+                    <button
+                      onClick={saveConfiguration}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border-2 border-purple-300 text-purple-primary hover:bg-purple-50 transition-all font-medium"
+                    >
+                      <Save className="w-4 h-4" />
+                      Save Draft
+                    </button>
                   </div>
-                </div>
-
-                {/* Pipeline Checklist */}
-                <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
-                  <h3 className="font-syne text-base font-bold text-black-text mb-4">Pipeline Checklist</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { step: 1, label: 'Dataset Selected',    done: isUploadComplete,          detail: selectedBatch.name,                                                                              tab: 'upload' },
-                      { step: 2, label: 'Labelling',           done: isLabelingComplete,         detail: `${labelingProgress}% · ${selectedBatch.labeledRecords ?? 0}/${selectedBatch.totalRecords} records`, tab: 'labeling' },
-                      { step: 3, label: 'Target Variable',     done: isTargetComplete,           detail: targetColumn || 'Not configured',                                                                tab: 'target' },
-                      { step: 4, label: 'Preprocessing',       done: isPreprocessingComplete,    detail: isPreprocessingComplete ? 'All 4 steps done' : (preprocessingStep ? `Step done: ${preprocessingStep}` : 'Not started'), tab: 'preprocessing' },
-                      { step: 5, label: 'Feature Engineering', done: isFeaturesComplete,         detail: featureEngineeringResults ? `${featureEngineeringResults.features_added} features added` : 'Not run', tab: 'features' },
-                      { step: 6, label: 'Feature Selection',   done: finalFeatures.length > 0,  detail: finalFeatures.length > 0 ? `${finalFeatures.length} features selected` : 'Not configured',       tab: 'feature-selection' },
-                      { step: 7, label: 'Validation',          done: isValidationComplete,       detail: validationResults ? `${validationResults.passed}/${validationResults.total_checks} checks passed` : 'Not run', tab: 'validation' },
-                    ].map(({ step, label, done, detail, tab }) => (
-                      <div key={step} className={`flex items-center gap-3 p-3 rounded-xl border ${done ? 'bg-green-50 border-green-200' : 'bg-gray-50/60 border-gray-200'}`}>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${done ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
-                          {done ? <CheckCircle className="w-4 h-4" /> : step}
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white/80 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isUploadComplete ? 'bg-green-600' : 'bg-gray-300'
+                        }`}>
+                          {isUploadComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">1</span>}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className={`text-sm font-semibold ${done ? 'text-green-900' : 'text-gray-600'}`}>{label}</div>
-                          <div className="text-xs text-gray-500 truncate">{detail}</div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-black-text mb-1">Dataset Selected</div>
+                          <div className="text-xs text-gray-muted">{selectedBatch.name}</div>
                         </div>
-                        {!done && (
-                          <button onClick={() => setActiveTab(tab)} className="text-xs text-purple-600 hover:text-purple-800 font-medium flex-shrink-0">
-                            Go →
-                          </button>
-                        )}
-                        {done && <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex-shrink-0">Done</span>}
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Detail Cards Row */}
-                <div className="grid grid-cols-3 gap-4">
-                  {/* Dataset Card */}
-                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
-                    <h4 className="font-syne text-sm font-bold text-black-text mb-3 flex items-center gap-2">
-                      <Database className="w-4 h-4 text-purple-600" /> Dataset
-                    </h4>
-                    <div className="space-y-2 text-xs">
-                      {[
-                        ['Total Records',   selectedBatch.totalRecords?.toLocaleString()],
-                        ['Labelled',        `${selectedBatch.labeledRecords ?? 0} (${labelingProgress}%)`],
-                        ['Features (raw)',  selectedBatch.features],
-                        ['Target',          targetColumn ? LABEL_TYPES[targetColumn]?.name || targetColumn : '—'],
-                        ['Train / Test',    `${((1-trainTestSplit)*100).toFixed(0)}% / ${(trainTestSplit*100).toFixed(0)}%`],
-                        ['Stratified',      stratifyEnabled ? 'Yes' : 'No'],
-                      ].map(([k, v]) => (
-                        <div key={k} className="flex justify-between items-center">
-                          <span className="text-gray-500">{k}</span>
-                          <span className="font-semibold text-gray-800 text-right max-w-[120px] truncate">{v}</span>
-                        </div>
-                      ))}
                     </div>
-                  </div>
-
-                  {/* Preprocessing Card */}
-                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
-                    <h4 className="font-syne text-sm font-bold text-black-text mb-3 flex items-center gap-2">
-                      <Settings className="w-4 h-4 text-blue-600" /> Preprocessing
-                    </h4>
-                    <div className="space-y-2.5 text-xs">
-                      {[
-                        { label: 'Variable Filtration', done: !!filtrationReport,      detail: filtrationReport ? `${filtrationReport.removed_columns?.length ?? 0} vars removed` : 'Not run' },
-                        { label: 'Imputation',          done: !!imputationReport,      detail: imputationReport ? `Strategy: ${imputationStrategy}` : 'Not run' },
-                        { label: 'Winsorization',       done: !!winsorizeReport,       detail: winsorizeReport  ? `${(winsorLower*100).toFixed(0)}% – ${(winsorUpper*100).toFixed(0)}%` : 'Not run' },
-                        { label: 'Standardisation',     done: !!standardizationReport, detail: standardizationReport ? standardizationMethod : 'Not run' },
-                      ].map(({ label, done, detail }) => (
-                        <div key={label} className={`flex items-center justify-between p-2 rounded-lg ${done ? 'bg-green-50' : 'bg-gray-50'}`}>
-                          <span className={`flex items-center gap-1.5 font-medium ${done ? 'text-green-800' : 'text-gray-400'}`}>
-                            {done ? <CheckCircle className="w-3 h-3" /> : <span className="w-3 h-3 rounded-full border border-gray-300 inline-block" />}
-                            {label}
-                          </span>
-                          <span className={`${done ? 'text-green-700' : 'text-gray-400'}`}>{detail}</span>
+                    
+                    <div className="bg-white/80 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isLabelingComplete ? 'bg-green-600' : 'bg-gray-300'
+                        }`}>
+                          {isLabelingComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">2</span>}
                         </div>
-                      ))}
-                      {preprocessingResults && (
-                        <div className="mt-2 pt-2 border-t border-gray-200 text-gray-600 space-y-1">
-                          <div className="flex justify-between"><span>Columns removed</span><span className="font-bold text-red-600">{preprocessingResults.columns_removed}</span></div>
-                          <div className="flex justify-between"><span>Rows preserved</span><span className="font-bold text-green-600">{preprocessingResults.final_rows}</span></div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-black-text mb-1">Labeling Progress</div>
+                          <div className="text-xs text-gray-muted">{labelingProgress}% complete ({selectedBatch.labeledRecords ?? 0}/{selectedBatch.totalRecords ?? 0} records)</div>
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Features Card */}
-                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5">
-                    <h4 className="font-syne text-sm font-bold text-black-text mb-3 flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-amber-600" /> Feature Engineering
-                    </h4>
-                    <div className="space-y-2 text-xs">
-                      {featureEngineeringResults ? (
-                        <>
-                          {[
-                            ['Original features', featureEngineeringResults.original_feature_count],
-                            ['New features added', `+${featureEngineeringResults.features_added}`],
-                            ['Total features', featureEngineeringResults.engineered_feature_count],
-                            ['Features selected', finalFeatures.length > 0 ? finalFeatures.length : (selectedFeatures.length || '—')],
-                          ].map(([k, v]) => (
-                            <div key={k} className="flex justify-between">
-                              <span className="text-gray-500">{k}</span>
-                              <span className="font-semibold text-gray-800">{v}</span>
-                            </div>
-                          ))}
-                          {featureEngineeringResults.new_features?.length > 0 && (
-                            <div className="mt-2 pt-2 border-t border-gray-200">
-                              <div className="text-gray-500 mb-1">Created:</div>
-                              <div className="flex flex-wrap gap-1">
-                                {featureEngineeringResults.new_features.slice(0, 5).map(f => (
-                                  <span key={f.name} className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-medium">{f.name}</span>
-                                ))}
-                                {featureEngineeringResults.new_features.length > 5 && (
-                                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">+{featureEngineeringResults.new_features.length - 5} more</span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="text-center py-4">
-                          <p className="text-gray-400 italic">Feature engineering not run</p>
-                          <button onClick={() => setActiveTab('features')} className="mt-2 text-purple-600 text-xs hover:underline">Run now →</button>
+                    
+                    <div className="bg-white/80 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isTargetComplete ? 'bg-green-600' : 'bg-gray-300'
+                        }`}>
+                          {isTargetComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">3</span>}
                         </div>
-                      )}
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-black-text mb-1">Target Variable</div>
+                          <div className="text-xs text-gray-muted">{targetColumn || 'Not set'}</div>
+                          <div className="text-xs text-gray-muted mt-1">Split: {((1-trainTestSplit)*100).toFixed(0)}% train / {(trainTestSplit*100).toFixed(0)}% test {stratifyEnabled && '(stratified)'}</div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* Validation + Readiness Row */}
-                <div className="grid grid-cols-5 gap-4">
-                  {/* Readiness score */}
-                  <div className="col-span-2 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-5">
-                    <h4 className="font-syne text-sm font-bold text-purple-900 mb-4">Readiness Score</h4>
-                    <div className="flex items-center gap-5">
-                      <div className="relative w-24 h-24 flex-shrink-0">
-                        <div className="w-24 h-24 rounded-full flex items-center justify-center bg-white border-8 border-purple-500">
-                          <div className="text-center">
-                            <div className={`font-syne text-2xl font-bold ${readinessPct >= 80 ? 'text-green-600' : readinessPct >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{readinessPct}%</div>
+                    
+                    <div className="bg-white/80 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isFeaturesComplete ? 'bg-green-600' : 'bg-gray-300'
+                        }`}>
+                          {isFeaturesComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">4</span>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-black-text mb-1">Feature Engineering</div>
+                          <div className="text-xs text-gray-muted">{selectedFeatures.length > 0 ? `${selectedFeatures.length} features selected` : 'Not configured'}</div>
+                          <div className="text-xs text-gray-muted mt-1">Scaling: {scalingMethod}</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-white/80 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isValidationComplete ? 'bg-green-600' : 'bg-gray-300'
+                        }`}>
+                          {isValidationComplete ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">5</span>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-black-text mb-1">Validation Status</div>
+                          <div className="text-xs text-gray-muted">
+                            {validationResults 
+                              ? `${validationResults.passed}/${validationResults.total_checks} checks passed`
+                              : 'Not run yet'}
                           </div>
                         </div>
                       </div>
-                      <div className="space-y-1.5 text-xs">
-                        {[
-                          ['Labelling ≥80%', isLabelingComplete],
-                          ['Preprocessing', isPreprocessingComplete],
-                          ['Features', isFeaturesComplete],
-                          ['Validation', isValidationComplete],
-                          ['Ready to train', isReadyForTraining],
-                        ].map(([label, ok]) => (
-                          <div key={label} className={`flex items-center gap-1.5 ${ok ? 'text-green-700' : 'text-gray-400'}`}>
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ok ? 'bg-green-500' : 'bg-gray-300'}`} />
-                            <span className="font-medium">{label}</span>
+                    </div>
+                    
+                    <div className="bg-white/80 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isReadyForTraining ? 'bg-green-600' : 'bg-gray-300'
+                        }`}>
+                          {isReadyForTraining ? <CheckCircle className="w-4 h-4 text-white" /> : <span className="text-xs text-white font-bold">6</span>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-black-text mb-1">Ready for Training</div>
+                          <div className={`text-xs font-semibold ${
+                            isReadyForTraining ? 'text-green-600' : 'text-amber-600'
+                          }`}>
+                            {isReadyForTraining ? 'All checks passed ✓' : 'Complete all steps'}
                           </div>
-                        ))}
+                        </div>
                       </div>
                     </div>
-                    {validationResults && (
-                      <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-center">
-                        {[
-                          ['Passed', validationResults.passed, 'text-green-600'],
-                          ['Warnings', validationResults.warnings, 'text-amber-600'],
-                          ['Errors', validationResults.errors, 'text-red-600'],
-                        ].map(([l, v, c]) => (
-                          <div key={l} className="bg-white/60 rounded-lg py-2">
-                            <div className={`text-lg font-bold ${c}`}>{v}</div>
-                            <div className="text-gray-500">{l}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-
-                  {/* CTA */}
-                  <div className="col-span-3 bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-5 flex flex-col justify-between">
-                    <div>
-                      <h4 className="font-syne text-base font-bold text-black-text mb-2">
-                        {isReadyForTraining ? '🎉 Ready for ML Training!' : 'Complete preparation to unlock training'}
-                      </h4>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        {isReadyForTraining
-                          ? 'All preparation steps are complete. Your dataset is configured, labelled, preprocessed, and validated. Click below to launch the Training Job wizard with your configuration pre-loaded.'
-                          : 'Finish the outstanding steps marked above. Training requires: at least 80% labelling, preprocessing completed, and validation passing without errors.'}
+                  
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-blue-600">
+                        <span className="font-semibold">Keyboard Shortcut:</span> Press <kbd className="px-1.5 py-0.5 bg-white border border-blue-300 rounded text-xs font-mono">Enter</kbd> to advance to the next tab when current step is complete.
                       </p>
-                      {!isReadyForTraining && (
-                        <div className="mt-3 space-y-1.5">
-                          {!isLabelingComplete && <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"><AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> Labelling is below 80% — run auto-labelling on the Labelling tab</div>}
-                          {!isPreprocessingComplete && <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> Preprocessing not complete — run the pipeline on the Preprocessing tab</div>}
-                          {!isValidationComplete && <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"><AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> Validation not passed — run validation check on the Validation tab</div>}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-6">
+                  {/* Dataset Overview */}
+                  <div className="bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl p-6">
+                    <h3 className="font-syne text-lg font-bold text-black-text mb-4">Dataset Overview</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between py-2 border-b border-white/40">
+                        <span className="text-sm text-gray-muted">Dataset Name</span>
+                        <span className="text-sm font-semibold text-black-text">{selectedBatch.name}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-white/40">
+                        <span className="text-sm text-gray-muted">Batch ID</span>
+                        <span className="text-sm font-mono text-black-text">{selectedBatch.id}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-white/40">
+                        <span className="text-sm text-gray-muted">Total Samples</span>
+                        <span className="text-sm font-semibold text-purple-primary">{selectedBatch.totalRecords}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-white/40">
+                        <span className="text-sm text-gray-muted">Selected Features</span>
+                        <span className="text-sm font-semibold text-black-text">{selectedFeatures.length || selectedBatch.features}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-white/40">
+                        <span className="text-sm text-gray-muted">Target Column</span>
+                        <span className="text-sm font-semibold text-purple-primary">{targetColumn || 'Not set'}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-white/40">
+                        <span className="text-sm text-gray-muted">Train/Test Split</span>
+                        <span className="text-sm font-semibold text-black-text">{((1-trainTestSplit)*100).toFixed(0)}/{(trainTestSplit*100).toFixed(0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 border-b border-white/40">
+                        <span className="text-sm text-gray-muted">Labeled Records</span>
+                        <span className="text-sm font-semibold text-green">{selectedBatch.labeledRecords ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2">
+                        <span className="text-sm text-gray-muted">Status</span>
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${(statusConfig[selectedBatch.status] || statusConfig.default).bg} ${(statusConfig[selectedBatch.status] || statusConfig.default).text}`}>
+                          {(statusConfig[selectedBatch.status] || statusConfig.default).label}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quality Score */}
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-50/50 border border-purple-200 rounded-2xl p-6">
+                    <h3 className="font-syne text-lg font-bold text-purple-primary mb-4">Data Quality Score</h3>
+                    <div className="flex items-center justify-center mb-6">
+                      <div className="relative">
+                        <div className="w-32 h-32 rounded-full flex items-center justify-center bg-white border-8 border-purple-primary">
+                          <div className="text-center">
+                            <div className="font-syne text-3xl font-bold text-purple-primary">
+                              {validationResults 
+                                ? ((validationResults.passed / validationResults.total_checks) * 100).toFixed(0)
+                                : 'N/A'}
+                            </div>
+                            <div className="text-xs text-gray-muted">out of 100</div>
+                          </div>
                         </div>
-                      )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 mt-5">
-                      <button
-                        onClick={saveConfiguration}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition-all text-sm"
-                      >
-                        <Save className="w-4 h-4" /> Save Draft
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('upload')}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition-all text-sm"
-                      >
-                        <ArrowLeft className="w-4 h-4" /> Edit Steps
-                      </button>
-                      <button
-                        onClick={handleProceedToTraining}
-                        disabled={!isReadyForTraining || loading}
-                        className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-white font-semibold transition-all text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={isReadyForTraining ? { background: 'linear-gradient(135deg, #7C3AED, #4F46E5)' } : { background: '#9CA3AF' }}
-                      >
-                        {loading ? (
-                          <><RefreshCw className="w-4 h-4 animate-spin" /> Saving…</>
-                        ) : (
-                          <><Play className="w-4 h-4" /> Start ML Training</>
-                        )}
-                      </button>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-muted">Validation Status</span>
+                        <span className={`font-semibold ${
+                          validationResults?.errors > 0 ? 'text-red-600' :
+                          validationResults?.warnings > 0 ? 'text-amber' : 'text-green'
+                        }`}>
+                          {validationResults 
+                            ? validationResults.errors > 0 ? 'Has Errors' : validationResults.warnings > 0 ? 'Has Warnings' : 'Passed'
+                            : 'Not Run'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-muted">Labeling Completeness</span>
+                        <span className={`font-semibold ${parseFloat(labelingProgress) >= 80 ? 'text-green' : 'text-amber'}`}>
+                          {labelingProgress}%
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-muted">Target Set</span>
+                        <span className={`font-semibold ${targetColumn ? 'text-green' : 'text-red-600'}`}>
+                          {targetColumn ? 'Yes' : 'No'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-muted">Features Selected</span>
+                        <span className={`font-semibold ${selectedFeatures.length > 0 ? 'text-green' : 'text-red-600'}`}>
+                          {selectedFeatures.length > 0 ? 'Yes' : 'No'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-muted">Ready for Training</span>
+                        <span className={`font-semibold ${isReadyForTraining ? 'text-green' : 'text-red-600'}`}>
+                          {isReadyForTraining ? 'Yes' : 'No'}
+                        </span>
+                      </div>
                     </div>
+                  </div>
+                </div>
+                
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between mt-8 p-6 bg-white/80 backdrop-blur-sm border border-white/40 rounded-2xl">
+                  <div>
+                    <h4 className="font-semibold text-black-text mb-1">Ready to proceed?</h4>
+                    <p className="text-sm text-gray-muted">
+                      {isReadyForTraining 
+                        ? 'All checks passed! You can now proceed to model training.'
+                        : 'Complete all preparation steps before training.'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setActiveTab('upload')}
+                      className="flex items-center gap-2 px-6 py-3 rounded-lg border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition-all"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      Back to Edit
+                    </button>
+                    
+                    <button
+                      onClick={handleProceedToTraining}
+                      disabled={!isReadyForTraining || loading}
+                      className="flex items-center gap-2 px-6 py-3 rounded-lg bg-purple-primary text-white hover:shadow-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? 'Saving & Proceeding...' : 'Proceed to Training'}
+                      <Play className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               </div>

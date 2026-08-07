@@ -12,6 +12,7 @@ import logging
 from app.core.database import get_db
 from app.api.deps import get_current_active_user, require_researcher_or_admin
 from app.models.user import User
+from app.models.training_job import TrainingJob
 from app.services.scorecard_service import ClinicalScorecardService
 from app.services.minio_service import get_minio_service
 
@@ -60,6 +61,13 @@ class ModelComparisonResponse(BaseModel):
     best_model: str
     comparison_metric: str
     ranking: List[str]
+
+
+class ScorecardByJobRequest(BaseModel):
+    """Request for scorecard using a training job ID"""
+    job_id: str = Field(..., description="Training job ID (model_id from models/list)")
+    patient_data: Dict[str, Any] = Field(..., description="Patient features")
+    include_feature_scores: bool = Field(default=True, description="Include feature-level scores")
 
 
 # ============================================
@@ -117,6 +125,75 @@ async def generate_clinical_scorecard(
         )
     except Exception as e:
         logger.error(f"Scorecard generation error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate scorecard: {str(e)}"
+        )
+
+
+@router.post("/scorecard/by-job", response_model=ScorecardResponse)
+async def generate_scorecard_by_job(
+    request: ScorecardByJobRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Generate clinical scorecard using a training job ID.
+
+    Looks up the artifact path from the training job record, then runs the scorecard.
+    Use the `model_id` returned by GET /ml/models/list as the `job_id`.
+    """
+    try:
+        job = db.query(TrainingJob).filter(TrainingJob.job_id == request.job_id).first()
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Training job not found: {request.job_id}"
+            )
+
+        artifact_paths = job.artifact_paths or []
+        if not artifact_paths:
+            result_data = job.result or {}
+            single_path = result_data.get("model_artifact_path", "")
+            if single_path:
+                artifact_paths = [single_path]
+
+        if not artifact_paths:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No model artifacts found for job {request.job_id}. The model may not have been saved to MinIO."
+            )
+
+        first_path = artifact_paths[0]
+        parts = first_path.split("/")
+        if len(parts) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected artifact path format: {first_path}"
+            )
+        minio_model_name = parts[0]
+        minio_version = parts[1]
+
+        logger.info(f"Scorecard by-job: job={request.job_id}, minio_model={minio_model_name}, version={minio_version}")
+
+        scorecard_service = ClinicalScorecardService(db)
+        result = scorecard_service.generate_scorecard(
+            model_name=minio_model_name,
+            version=minio_version,
+            patient_data=request.patient_data,
+            include_feature_scores=request.include_feature_scores
+        )
+        return ScorecardResponse(**result)
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Scorecard by-job error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate scorecard: {str(e)}"

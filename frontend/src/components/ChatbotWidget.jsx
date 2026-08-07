@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X, Send, Minimize2, Sparkles } from 'lucide-react';
+import { MessageCircle, X, Send, Minimize2, Sparkles, Trash2 } from 'lucide-react';
 import './DrMyra.css';
 import { explainabilityAPI } from '../services/api-complete';
 
@@ -156,16 +156,26 @@ const parseInlineMarkdown = (text) => {
   return parts.length > 0 ? parts : text;
 };
 
+const SUGGESTION_CHIPS = [
+  "What is SLE?",
+  "How does SHAP work?",
+  "Which model is best?",
+  "What should I do first?",
+  "Explain this platform",
+];
+
 const ChatbotWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [modelInfo, setModelInfo] = useState({ model: 'dr-myra-knowledge-base', device: 'cpu' });
   const [messages, setMessages] = useState([
     {
       id: 1,
       sender: 'dr-myra',
       text: "Hello. I'm Dr. Myra, your AI Clinical Assistant. How may I assist you with your autoimmune research today?",
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      modelInfo: null,
     }
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -180,10 +190,12 @@ const ChatbotWidget = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async () => {
-    if (inputValue.trim() === '') return;
-
-    const userMessage = inputValue;
+  const handleSendMessage = async (overrideText) => {
+    const userMessage = overrideText || inputValue;
+    if (!userMessage.trim()) return;
+    // Reset textarea height
+    const textarea = document.querySelector('.chat-input');
+    if (textarea) textarea.style.height = 'auto';
     const newMessage = {
       id: messages.length + 1,
       sender: 'user',
@@ -212,11 +224,15 @@ const ChatbotWidget = () => {
 
       setIsTyping(false);
       
+      const info = { model: response.model, device: response.device };
+      setModelInfo(info);
+
       const aiResponse = {
         id: messages.length + 2,
         sender: 'dr-myra',
         text: response.response,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        modelInfo: info,
       };
       
       setMessages(prev => [...prev, aiResponse]);
@@ -234,7 +250,8 @@ const ChatbotWidget = () => {
         id: messages.length + 2,
         sender: 'dr-myra',
         text: "I apologize, but I'm having trouble connecting right now. Please try again in a moment.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        modelInfo: null,
       };
       
       setMessages(prev => [...prev, errorMessage]);
@@ -246,6 +263,17 @@ const ChatbotWidget = () => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleClearChat = () => {
+    setMessages([{
+      id: 1,
+      sender: 'dr-myra',
+      text: "Conversation cleared. How can I assist you?",
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      modelInfo: null,
+    }]);
+    setConversationHistory([]);
   };
 
   if (!isOpen) {
@@ -279,11 +307,18 @@ const ChatbotWidget = () => {
             <div className="assistant-name">Dr. Myra</div>
             <div className="assistant-status">
               <span className="status-indicator"></span>
-              <span className="status-text">Active</span>
+              <span className="status-text">Online</span>
             </div>
           </div>
         </div>
         <div className="header-actions">
+          <button
+            className="header-btn"
+            onClick={handleClearChat}
+            title="Clear conversation"
+          >
+            <Trash2 size={15} />
+          </button>
           <button 
             className="header-btn" 
             onClick={() => setIsMinimized(!isMinimized)}
@@ -315,7 +350,9 @@ const ChatbotWidget = () => {
                   <div className="message-text">
                     {msg.sender === 'dr-myra' ? parseMarkdown(msg.text) : msg.text}
                   </div>
-                  <div className="message-time">{msg.timestamp}</div>
+                  <div className="message-meta">
+                    <span className="message-time">{msg.timestamp}</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -332,6 +369,21 @@ const ChatbotWidget = () => {
                 </div>
               </div>
             )}
+
+            {/* Suggestion chips — show only when conversation is fresh */}
+            {messages.length <= 1 && !isTyping && (
+              <div className="suggestion-chips">
+                {SUGGESTION_CHIPS.map((chip) => (
+                  <button
+                    key={chip}
+                    className="suggestion-chip"
+                    onClick={() => handleSendMessage(chip)}
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            )}
             
             <div ref={messagesEndRef} />
           </div>
@@ -342,7 +394,11 @@ const ChatbotWidget = () => {
                 className="chat-input"
                 placeholder="Ask Dr. Myra about your data..."
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={(e) => {
+                  setInputValue(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                }}
                 onKeyPress={handleKeyPress}
                 rows={1}
               />

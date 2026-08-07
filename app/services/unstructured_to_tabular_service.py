@@ -78,16 +78,8 @@ class UnstructuredToTabularService:
         # FALLBACK 2: No structured data - create single row with raw text
         else:
             rows = [{
-                'source_document': document_info.get('filename', 'Unknown'),
-                'document_type': document_info.get('file_type', 'unknown'),
-                'source_path': document_info.get('source_path', ''),
                 'extracted_text': extracted_text[:5000] if extracted_text else '',  # Truncate for preview
                 'text_length': len(extracted_text) if extracted_text else 0,
-                'page_count': document_info.get('page_count', 0),
-                'ocr_confidence': document_info.get('confidence_score', 0.0),
-                'ocr_engine': document_info.get('ocr_engine', 'Unknown'),
-                'processing_time_s': document_info.get('processing_time_s', 0.0),
-                'vram_used_mb': document_info.get('vram_used_mb', 0.0),
                 'entity_count': 0,
                 'note': 'No structured entities extracted - raw text available'
             }]
@@ -153,15 +145,8 @@ class UnstructuredToTabularService:
         """
         rows = []
         
-        # Common metadata to add to each row
+        # Common metadata to add to each row (system/pipeline fields excluded — not for ML training)
         common_data = {
-            'source_document': document_info.get('filename', 'Unknown'),
-            'document_type': document_info.get('file_type', 'pdf'),
-            'ocr_engine': document_info.get('ocr_engine', 'Qwen3-VL-2B-Instruct'),
-            'ocr_confidence': document_info.get('confidence_score', 0.0),
-            'page_count': document_info.get('page_count', 1),
-            'processing_time_s': document_info.get('processing_time_s', 0.0),
-            
             # Patient metadata
             'lab_no': metadata.get('lab_no', ''),
             'mrn': metadata.get('mrn', ''),

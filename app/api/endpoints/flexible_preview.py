@@ -347,6 +347,8 @@ async def auto_fill_missing(
 async def save_preview_to_database(
     session_id: str,
     dataset_source: Optional[str] = Body(None, embed=True),
+    final_dataset_name: Optional[str] = Body(None, embed=True),
+    excluded_columns: Optional[list] = Body(None, embed=True),
     current_user: User = Depends(require_researcher_or_admin),
     db: Session = Depends(get_db)
 ):
@@ -371,7 +373,9 @@ async def save_preview_to_database(
     try:
         result = import_service.import_from_staging(
             session_id=session_uuid,
-            dataset_source=dataset_source
+            dataset_source=dataset_source,
+            final_dataset_name=final_dataset_name,
+            excluded_columns=excluded_columns or []
         )
         
         if not result['success']:
@@ -733,6 +737,53 @@ async def get_recent_uploads(
     
     # Get saved datasets - JOIN with users table to get actual uploader
     if include_saved:
+        # Pre-compute labeled counts for all batches in a single query (efficient)
+        labeled_counts = {}
+        try:
+            from sqlalchemy import text as sa_text
+            label_q = db.execute(sa_text("""
+                SELECT import_batch_id::text,
+                       COUNT(*) as total,
+                       COUNT(*) FILTER (
+                           WHERE (data->>'labels_disease_classification' IS NOT NULL
+                                  AND data->>'labels_disease_classification' NOT IN ('', 'null', 'None', 'nan'))
+                              OR (data->>'labels_disease_severity' IS NOT NULL
+                                  AND data->>'labels_disease_severity' NOT IN ('', 'null', 'None', 'nan'))
+                              OR (data->>'labels_custom' IS NOT NULL
+                                  AND data->>'labels_custom' NOT IN ('', 'null', 'None', 'nan'))
+                       ) as labeled,
+                       COUNT(*) FILTER (
+                           WHERE data->>'labels_disease_classification' IS NOT NULL
+                             AND data->>'labels_disease_classification' NOT IN ('', 'null', 'None', 'nan')
+                       ) as dc_count,
+                       COUNT(*) FILTER (
+                           WHERE data->>'labels_disease_severity' IS NOT NULL
+                             AND data->>'labels_disease_severity' NOT IN ('', 'null', 'None', 'nan')
+                       ) as ds_count,
+                       COUNT(*) FILTER (
+                           WHERE data->>'labels_custom' IS NOT NULL
+                             AND data->>'labels_custom' NOT IN ('', 'null', 'None', 'nan')
+                       ) as custom_count
+                FROM flexible_dataset_wide
+                GROUP BY import_batch_id
+            """))
+            for lr in label_q:
+                dc_count = int(lr[3])
+                ds_count = int(lr[4])
+                custom_count = int(lr[5])
+                # Determine which label column is most populated
+                if dc_count >= ds_count and dc_count >= custom_count and dc_count > 0:
+                    active_col = 'labels_disease_classification'
+                elif ds_count >= custom_count and ds_count > 0:
+                    active_col = 'labels_disease_severity'
+                elif custom_count > 0:
+                    active_col = 'labels_custom'
+                else:
+                    active_col = 'labels_disease_classification'  # default
+                labeled_counts[lr[0]] = (int(lr[2]), int(lr[1]), active_col)
+        except Exception as e:
+            logger.warning(f"Could not compute labeled counts: {e}")
+
         saved_query = db.query(
             FlexibleDatasetWide.import_batch_id,
             FlexibleDatasetWide.dataset_name,
@@ -784,6 +835,18 @@ async def get_recent_uploads(
             else:
                 uploaded_date = 'Unknown'
             
+            # Compute ml_prep_status from label counts
+            batch_key = str(row.import_batch_id)
+            labeled, total, active_label_column = labeled_counts.get(
+                batch_key, (0, row.row_count, 'labels_disease_classification')
+            )
+            if labeled >= total and total > 0:
+                ml_prep_status = 'ml_ready'
+            elif labeled > 0:
+                ml_prep_status = 'in_progress'
+            else:
+                ml_prep_status = 'not_started'
+
             uploads.append({
                 'id': str(row.import_batch_id),
                 'file_name': row.dataset_name or 'Unnamed Dataset',
@@ -791,8 +854,10 @@ async def get_recent_uploads(
                 'uploaded_at': row.created_at.isoformat() if row.created_at else None,
                 'file_type': file_type,
                 'row_count': row.row_count,
+                'labeled_count': labeled,
+                'active_label_column': active_label_column,
                 'status': 'saved',
-                'ml_prep_status': 'ready',  # Saved files are ready for ML prep
+                'ml_prep_status': ml_prep_status,
                 'is_owner': uploader_id == current_user.id if uploader_id else False
             })
     
@@ -811,101 +876,139 @@ async def get_recent_uploads(
     }
 
 
-@router.get("/saved-dataset/{batch_id}/preview")
-async def get_saved_dataset_preview(
+@router.get("/batch/{batch_id}/summary")
+async def get_batch_eda_summary(
     batch_id: str,
-    page: int = 1,
-    page_size: int = 100,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    Get preview data from a SAVED dataset (FlexibleDatasetWide table)
-    Used for EDA and data exploration of finalized datasets
-    
-    Args:
-        batch_id: Import batch ID (UUID)
-        page: Page number (1-indexed)
-        page_size: Records per page (default: 100)
-    
-    Returns:
-        Paginated data with schema matching preview format
+    EDA summary statistics for a specific import batch.
+    Returns per-column statistics (numeric & categorical) computed
+    directly from the FlexibleDatasetWide JSON data column.
     """
+    import uuid
+    import pandas as pd
     from app.models.flexible_data import FlexibleDatasetWide
-    from sqlalchemy import func
-    
+    from app.services.eda_analyzer import EDAAnalyzer
+
     try:
         batch_uuid = uuid.UUID(batch_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid batch_id format")
-    
-    # Get total row count
-    total_rows = db.query(func.count(FlexibleDatasetWide.id)).filter(
-        FlexibleDatasetWide.import_batch_id == batch_uuid
-    ).scalar() or 0
-    
-    if total_rows == 0:
-        raise HTTPException(status_code=404, detail="Dataset not found or empty")
-    
-    # Calculate pagination
-    total_pages = (total_rows + page_size - 1) // page_size
-    offset = (page - 1) * page_size
-    
-    # Fetch paginated rows
-    rows_query = db.query(FlexibleDatasetWide).filter(
-        FlexibleDatasetWide.import_batch_id == batch_uuid
-    ).order_by(FlexibleDatasetWide.id).offset(offset).limit(page_size)
-    
-    def flatten_row_data(data):
-        """Flatten nested JSONB categories into a flat dict for EDA display."""
-        flat = {}
-        for key, value in data.items():
-            if key.startswith('_'):  # skip internal metadata
-                continue
-            if isinstance(value, dict):
-                for nested_key, nested_val in value.items():
-                    if nested_key.startswith('_'):
-                        continue
-                    # 'other' is a catch-all category - don't prefix those fields
-                    if key == 'other':
-                        flat[nested_key] = nested_val
-                    else:
-                        flat[f"{key}.{nested_key}"] = nested_val
-            else:
-                flat[key] = value
-        return flat
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid batch ID format")
 
-    rows = []
-    schema = {}
-    columns = []
-    
-    for row in rows_query:
-        if row.data:
-            flat_data = flatten_row_data(row.data)
-            # Extract columns from first row
-            if not columns:
-                columns = list(flat_data.keys())
-                for col in columns:
-                    value = flat_data.get(col)
-                    if isinstance(value, bool):
-                        schema[col] = 'boolean'
-                    elif isinstance(value, (int, float)):
-                        schema[col] = 'numeric'
-                    else:
-                        schema[col] = 'text'
-            
-            rows.append({
-                'staging_id': row.id,
-                'data': flat_data
-            })
-    
+    rows = db.query(FlexibleDatasetWide).filter(
+        FlexibleDatasetWide.import_batch_id == batch_uuid
+    ).limit(5000).all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Dataset not found or empty")
+
+    # Reconstruct DataFrame from JSONB data column
+    # Data is stored as {"other": {col1: val, col2: val, ...}, "labels_X": value, "_labeling_metadata": {...}}
+    # Flatten: expand nested dicts (e.g. "other"), skip "_labeling_metadata"
+    flat_records = []
+    for r in rows:
+        if not r.data:
+            continue
+        record = {}
+        for k, v in r.data.items():
+            if k == '_labeling_metadata':
+                continue  # skip internal metadata
+            if isinstance(v, dict):
+                # Flatten nested feature dicts (e.g. "other" key holds all clinical columns)
+                for nk, nv in v.items():
+                    if not isinstance(nv, (dict, list)):
+                        record[nk] = nv
+            elif not isinstance(v, list):
+                record[k] = v
+        flat_records.append(record)
+
+    if not flat_records:
+        raise HTTPException(status_code=404, detail="No data found in dataset")
+
+    df = pd.DataFrame(flat_records)
+
+    # Attempt numeric coercion for columns that look numeric.
+    # Use errors='coerce' so non-numeric values become NaN (not errors='ignore'
+    # which leaves the whole column as object if ANY value is non-numeric).
+    # Only apply the conversion if at least 30% of non-null values survived.
+    for col in df.columns:
+        if df[col].dtype == object:
+            try:
+                converted = pd.to_numeric(df[col], errors='coerce')
+                orig_nn = int(df[col].notna().sum())
+                conv_nn = int(converted.notna().sum())
+                if orig_nn > 0 and conv_nn >= orig_nn * 0.3:
+                    df[col] = converted
+            except Exception:
+                pass
+
+    # Metadata from first row
+    first_row = rows[0]
+    dataset_name = first_row.dataset_name or f"Batch {batch_id[:8]}"
+    dataset_type = first_row.dataset_type or "General"
+
+    # Run EDA analyzer
+    try:
+        analyzer = EDAAnalyzer()
+        summary = analyzer.generate_summary_statistics(df)
+    except Exception as e:
+        print(f"EDA analysis failed for batch {batch_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"EDA analysis failed: {str(e)}")
+
+    # Compute top correlations from numeric columns
+    top_correlations = []
+    try:
+        import numpy as np
+        num_df = df.select_dtypes(include=['number'])
+        if num_df.shape[1] >= 2:
+            corr_matrix = num_df.corr()
+            cols = corr_matrix.columns.tolist()
+            signed = []
+            for i in range(len(cols)):
+                for j in range(i + 1, len(cols)):
+                    val = corr_matrix.iloc[i, j]
+                    if pd.notna(val):
+                        signed.append({
+                            'var1': cols[i],
+                            'var2': cols[j],
+                            'correlation': round(float(val), 3),
+                            'strength': 'strong' if abs(val) >= 0.7 else ('moderate' if abs(val) >= 0.5 else 'weak')
+                        })
+            top_correlations = sorted(signed, key=lambda x: abs(x['correlation']), reverse=True)[:10]
+    except Exception as e:
+        print(f"[EDA] Correlation computation failed for batch {batch_id}: {e}")
+        # Correlations are optional; skip on error
+
+    # Compute histogram bins (10 bins per numeric column) for distribution charts
+    histograms = {}
+    try:
+        import numpy as np
+        num_df = df.select_dtypes(include=['number'])
+        for col in num_df.columns:
+            col_data = num_df[col].dropna()
+            if len(col_data) >= 5:
+                try:
+                    counts, bin_edges = np.histogram(col_data, bins=10)
+                    histograms[col] = {
+                        'counts': [int(c) for c in counts],
+                        'bins': [round(float(e), 4) for e in bin_edges]
+                    }
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return {
-        'session_id': str(batch_uuid),
-        'total_rows': total_rows,
-        'page': page,
-        'page_size': page_size,
-        'total_pages': total_pages,
-        'rows': rows,
-        'schema': schema
+        "batch_id": batch_id,
+        "dataset_name": dataset_name,
+        "dataset_type": dataset_type,
+        "row_count": len(df),
+        "column_count": len(df.columns),
+        "summary_statistics": summary,
+        "top_correlations": top_correlations,
+        "histograms": histograms
     }
+
 

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import {
   ChevronRight,
   Database,
@@ -78,6 +79,8 @@ export default function EDAWorkbenchPage() {
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const location = useLocation();
+  const { id: paramId } = useParams();
 
   useEffect(() => {
     loadDatasets();
@@ -88,9 +91,19 @@ export default function EDAWorkbenchPage() {
       setLoading(true);
       // Include both staging (just uploaded) and saved files
       const response = await flexibleAPI.getRecentUploads(50, true, true);
-      setDatasets(response.uploads || []);
-      if (response.uploads && response.uploads.length > 0) {
-        setDataset(response.uploads[0].file_name);
+      const uploads = response.uploads || [];
+      setDatasets(uploads);
+      // Auto-select dataset from URL param or navigation state
+      const preselectedId = paramId || location.state?.preselectedId;
+      if (preselectedId && uploads.length > 0) {
+        const match = uploads.find(d => d.id === preselectedId);
+        if (match) {
+          setDataset(match.file_name);
+          return;
+        }
+      }
+      if (uploads.length > 0) {
+        setDataset(uploads[0].file_name);
       }
     } catch (err) {
       console.error('Failed to load datasets:', err);

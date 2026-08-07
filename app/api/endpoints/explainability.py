@@ -11,6 +11,7 @@ import logging
 from app.core.database import get_db
 from app.api.deps import get_current_active_user
 from app.models.user import User
+from app.models.training_job import TrainingJob, JobStatus, JobType
 from app.services.shap_explainer_service import SHAPExplainerService
 from app.services.gemma_conversational_service import GemmaConversationalService
 
@@ -166,6 +167,88 @@ async def explain_ensemble_prediction(
         )
 
 
+class SHAPByJobRequest(BaseModel):
+    """Request for SHAP explanation using a training job ID"""
+    job_id: str = Field(..., description="Training job ID (model_id from models/list)")
+    patient_data: Dict[str, Any] = Field(..., description="Patient features")
+    top_k: int = Field(default=10, description="Number of top features to return")
+    generate_plot: bool = Field(default=True, description="Generate waterfall plot")
+
+
+@router.post("/explain/by-job", response_model=SHAPExplanationResponse)
+async def explain_by_job_id(
+    request: SHAPByJobRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get SHAP explanation for a trained model identified by its training job ID.
+
+    Looks up the artifact path from the training job record, then runs SHAP.
+    Use the `model_id` returned by GET /ml/models/list as the `job_id`.
+    """
+    try:
+        # Load the training job from DB
+        job = db.query(TrainingJob).filter(TrainingJob.job_id == request.job_id).first()
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Training job not found: {request.job_id}"
+            )
+
+        # Resolve the MinIO path: try artifact_paths (list) first, then result
+        artifact_paths = job.artifact_paths or []
+        if not artifact_paths:
+            result_data = job.result or {}
+            single_path = result_data.get("model_artifact_path", "")
+            if single_path:
+                artifact_paths = [single_path]
+
+        if not artifact_paths:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No model artifacts found for job {request.job_id}. The model may not have been saved to MinIO."
+            )
+
+        # Parse model_name and version from path: "{model_name}/{version}/fold_N.pkl"
+        first_path = artifact_paths[0]
+        parts = first_path.split("/")
+        if len(parts) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unexpected artifact path format: {first_path}"
+            )
+        minio_model_name = parts[0]
+        minio_version = parts[1]
+
+        logger.info(f"SHAP by-job: job={request.job_id}, minio_model={minio_model_name}, version={minio_version}")
+
+        shap_service = SHAPExplainerService(db)
+        result = shap_service.explain_prediction(
+            model_name=minio_model_name,
+            version=minio_version,
+            patient_data=request.patient_data,
+            top_k=request.top_k,
+            generate_plot=request.generate_plot
+        )
+        return SHAPExplanationResponse(**result)
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        # Friendly errors from _create_explainer (e.g. no artifacts in MinIO)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"SHAP by-job explanation error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate explanation: {str(e)}"
+        )
+
+
 # ============================================
 # Gemma-4-E4B Conversational AI Endpoints
 # ============================================
@@ -206,9 +289,45 @@ async def chat_with_ai(
                 for msg in request.conversation_history
             ]
         
+        # ── Enrich context with live platform data from DB ──────────────
+        enriched_context = dict(request.context or {})
+        try:
+            completed_jobs = (
+                db.query(TrainingJob)
+                .filter(
+                    TrainingJob.status == JobStatus.COMPLETED,
+                    TrainingJob.job_type.in_([JobType.BASE_MODEL, JobType.ENSEMBLE]),
+                )
+                .order_by(TrainingJob.completed_at.desc())
+                .limit(20)
+                .all()
+            )
+            models_summary = []
+            for j in completed_jobs:
+                models_summary.append({
+                    "name": j.model_name or j.job_id[:8],
+                    "type": j.job_type.value if j.job_type else "base_model",
+                    "oof_auc": round(j.oof_auc, 4) if j.oof_auc else None,
+                    "test_auc": round(j.test_auc, 4) if j.test_auc else None,
+                    "test_f1": round(j.test_f1, 4) if j.test_f1 else None,
+                    "trained_at": j.completed_at.isoformat() if j.completed_at else None,
+                })
+            if models_summary:
+                enriched_context["platform_data"] = {
+                    "trained_models": models_summary,
+                    "total_models": len(models_summary),
+                    "best_model": max(
+                        models_summary,
+                        key=lambda m: m.get("test_auc") or m.get("oof_auc") or 0,
+                    ),
+                }
+        except Exception as ctx_err:
+            logger.warning(f"Could not enrich chat context from DB: {ctx_err}")
+        # ────────────────────────────────────────────────────────────────
+
         result = gemma_service.chat(
             user_message=request.message,
-            context=request.context,
+            context=enriched_context,
             conversation_history=history,
             temperature=request.temperature
         )
